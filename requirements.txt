@@ -3,7 +3,6 @@ arviz==0.19.0
 asttokens==2.4.1
 attrs==23.2.0
 backcall==0.2.0
--e git+https://github.com/mertcan79/bayesian_dataclass.git@739346693dafec943b00c48b490000f9789ed2a3#egg=bayesianclass
 beautifulsoup4==4.12.3
 bleach==6.1.0
 cachetools==5.4.0
