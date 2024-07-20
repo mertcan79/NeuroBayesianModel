@@ -105,11 +105,14 @@ class BayesianNetwork:
     def compute_sensitivity(self, target_node: str, num_samples: int = 10000) -> Dict[str, float]:
         sensitivity = {}
         base_samples = self.sample_node(target_node, size=num_samples)
+        logger.info(f"Base samples for {target_node}: {base_samples[:5]}")  # Log first 5 samples
         
         for node_name, node in self.nodes.items():
             if node_name != target_node:
                 perturbed_network = copy.deepcopy(self)
                 perturbed_samples = perturbed_network.sample_node(node_name, size=num_samples)
+                
+                logger.info(f"Perturbed samples for {node_name}: {perturbed_samples[:5]}")  # Log first 5 samples
                 
                 if isinstance(node, CategoricalNode):
                     unique, counts = np.unique(perturbed_samples, return_counts=True)
@@ -117,7 +120,6 @@ class BayesianNetwork:
                     probabilities = [prob_dict.get(cat, 0) for cat in node.categories]
                     perturbed_network.nodes[node_name].set_distribution(probabilities)
                 else:
-                    # Instead of creating a new distribution, we'll just update the parameters
                     perturbed_samples_transformed = node.transform(perturbed_samples)
                     mean = np.mean(perturbed_samples_transformed)
                     std = np.std(perturbed_samples_transformed)
@@ -125,6 +127,8 @@ class BayesianNetwork:
                     perturbed_network.nodes[node_name].distribution = stats.norm
                 
                 perturbed_output = perturbed_network.sample_node(target_node, size=num_samples)
+                
+                logger.info(f"Perturbed output for {target_node}: {perturbed_output[:5]}")  # Log first 5 samples
                 
                 if isinstance(self.nodes[target_node], CategoricalNode):
                     sensitivity[node_name] = np.mean(perturbed_output != base_samples)
