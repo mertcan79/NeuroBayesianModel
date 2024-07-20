@@ -9,7 +9,6 @@ from sklearn.model_selection import train_test_split
 from concurrent.futures import ProcessPoolExecutor
 import time
 import os
-import networkx as nx
 
 def generate_synthetic_data(n_samples):
     A = np.random.normal(0, 1, n_samples)
