@@ -34,4 +34,5 @@ env/
 venv/
 ENV/
 env.bak/
-venv.bak/
+venv.bak/ssh-key-2024-07-20.key
+venv.bak/ssh-key-2024-07-20.key.pub
