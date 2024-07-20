@@ -23,7 +23,7 @@ if __name__ == "__main__":
 
     # Generate synthetic data
     print("Generating synthetic data...")
-    data = generate_synthetic_data(n_samples=5000)
+    data = generate_synthetic_data(n_samples=200)
 
     # Split data into train and test sets
     train_data, test_data = train_test_split(data, test_size=0.2, random_state=42)
