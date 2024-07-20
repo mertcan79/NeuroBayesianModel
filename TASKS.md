@@ -1,3 +1,7 @@
+git pull origin master
+
+
+
 ssh -i /Users/macbookair/Documents/bayesian_dataclass/ssh-key-2024-07-20.key opc@89.168.23.116
 
 
