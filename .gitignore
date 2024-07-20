@@ -37,10 +37,9 @@ env.bak/
 venv.bak/ssh-key-2024-07-20.key
 venv.bak/ssh-key-2024-07-20.key.pub
 
+# Keys
 ssh-key-2024-07-20.key
 ssh-key-2024-07-20.key.pub
 
-status.md
-TASKS.md
-PURPOSE.md
-presentation.md
+#Info
+archive/

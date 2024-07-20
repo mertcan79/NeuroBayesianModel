@@ -112,6 +112,7 @@ class BayesianNetwork:
         
         return np.array(samples).reshape(-1)
 
+
     def cross_validate(self, data: pd.DataFrame, k_folds: int = 5) -> Tuple[float, float]:
         kf = KFold(n_splits=k_folds, shuffle=True, random_state=42)
         log_likelihoods = []
