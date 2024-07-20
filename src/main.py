@@ -4,69 +4,57 @@ from bayesian_network import BayesianNetwork
 from sklearn.model_selection import train_test_split
 import time
 
-def generate_synthetic_data(n_samples=25000, n_vars=15):
-    data = pd.DataFrame()
-    data['A'] = np.random.normal(0, 1, n_samples)
-    data['B'] = 0.5 * data['A'] + np.random.normal(0, 0.5, n_samples)
-    data['C'] = 0.3 * data['A'] + 0.5 * data['B'] + np.random.normal(0, 0.5, n_samples)
-    for i in range(3, n_vars):
-        parents = np.random.choice(range(i), size=min(3, i), replace=False)
-        data[f'Var_{i}'] = sum(0.3 * data.iloc[:, p] for p in parents) + np.random.normal(0, 0.5, n_samples)
-    return data
+def generate_synthetic_data(n_samples=5000):
+    A = np.random.normal(0, 1, n_samples)
+    B = 0.5 * A + np.random.normal(0, 0.5, n_samples)
+    C = 0.3 * A + 0.7 * B + np.random.normal(0, 0.3, n_samples)
+    return pd.DataFrame({'A': A, 'B': B, 'C': C})
+
+data = generate_synthetic_data()
 
 def progress_callback(progress):
     print(f"Progress: {progress*100:.0f}%")
 
+def print_section(title):
+    print(f"\n{'-'*10} {title} {'-'*10}")
+
 if __name__ == "__main__":
     start_time = time.time()
 
-    # Generate synthetic data
-    print("Generating synthetic data...")
-    data = generate_synthetic_data(n_samples=1000)  # Reduced to 1000 samples
-
-    # Split data into train and test sets
+    print_section("Data Generation")
+    data = generate_synthetic_data(n_samples=5000)
     train_data, test_data = train_test_split(data, test_size=0.2, random_state=42)
+    print(f"Data profile: {len(data)} samples, {len(data.columns)} features")
 
-    # Create and train the Bayesian Network
-    print("Creating and training Bayesian Network...")
+    print_section("Bayesian Network Training")
     bn = BayesianNetwork(method='hill_climb', max_parents=2)
-
-    # Define prior knowledge
     prior_edges = [('A', 'B'), ('A', 'C'), ('B', 'C')]
-
-    # Fit the network
     bn.fit(train_data, prior_edges, progress_callback=progress_callback)
 
-    # Print learned structure
-    print("\nLearned Network Structure:")
+    print_section("Model Overview")
+    num_nodes = len(bn.nodes)
+    print(f"Number of nodes: {num_nodes}")
     for node_name, node in bn.nodes.items():
-        print(f"Node {node_name}:")
-        print(f"  Parents: {[parent.name for parent in node.parents]}")
-        print(f"  Children: {[child.name for child in node.children]}")
+        print(f"Node {node_name}: Parents = {[p.name for p in node.parents]}")
 
-    # Perform inference on test set
-    print("\nPerforming inference on test set...")
+    print_section("Evaluation Metrics")
     test_ll = bn.log_likelihood(test_data)
-    print(f"Test set log-likelihood: {test_ll:.4f}")
-
-    # Cross-validation
-    print("\nPerforming cross-validation...")
     mean_ll, std_ll = bn.cross_validate(data, k_folds=5)
-    print(f"Cross-validation results:")
-    print(f"  Mean log-likelihood: {mean_ll:.4f}")
-    print(f"  Std log-likelihood: {std_ll:.4f}")
+    print(f"Test log-likelihood: {test_ll:.4f}")
+    print(f"Cross-validation: Mean LL = {mean_ll:.4f}, Std = {std_ll:.4f}")
 
-    # Generate samples from the learned model
-    print("\nGenerating samples from the learned model...")
-    n_samples = 1000
-    sampled_data = pd.DataFrame({node: bn.sample_node(node, n_samples) for node in bn.nodes})
+    print_section("Sensitivity Analysis (Top 3)")
+    sensitivity = bn.compute_sensitivity('C', num_samples=5000)
+    top_sensitivities = sorted(sensitivity.items(), key=lambda x: x[1], reverse=True)[:3]
+    for node, value in top_sensitivities:
+        print(f"Sensitivity of C to {node}: {value:.4f}")
 
-    # Calculate mean and standard deviation of sampled data
-    print("\nSampled data statistics:")
-    for column in sampled_data.columns:
-        mean = sampled_data[column].mean()
-        std = sampled_data[column].std()
-        print(f"  {column}: Mean = {mean:.4f}, Std = {std:.4f}")
+    print_section("Metropolis-Hastings Sampling (Sample Mean & Std)")
+    observed_data = {'A': 0.5}
+    mh_samples = bn.metropolis_hastings(observed_data, num_samples=5000)
+    for node, samples in mh_samples.items():
+        if node not in observed_data:
+            print(f"{node}: Mean = {np.mean(samples):.4f}, Std = {np.std(samples):.4f}")
 
-    end_time = time.time()
-    print(f"\nTotal execution time: {end_time - start_time:.2f} seconds")
+    print_section("Summary")
+    print(f"Execution time: {time.time() - start_time:.2f} seconds")

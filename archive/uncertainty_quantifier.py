@@ -24,18 +24,21 @@ class UncertaintyQuantifier:
         mutual_info = np.mean(np.log(kde_joint(np.vstack([samples1, samples2])) / (kde1(samples1) * kde2(samples2))))
         return mutual_info
 
-    def sensitivity_analysis(self, target_node: str, input_nodes: List[str], n_samples: int = 1000) -> Dict[str, float]:
-        sensitivities = {}
-        base_output = self.network.sample_node(target_node, size=n_samples)
-        
-        for input_node in input_nodes:
-            perturbed_network = self.network.copy()
-            perturbed_data = perturbed_network.sample_node(input_node, size=n_samples) * 1.1
-            perturbed_network.nodes[input_node].distribution = gaussian_kde(perturbed_data)
-            perturbed_output = perturbed_network.sample_node(target_node, size=n_samples)
-            sensitivities[input_node] = np.mean(np.abs(perturbed_output - base_output) / np.maximum(np.abs(base_output), 1e-10))
-        
-        return sensitivities
+    def sensitivity_analysis(network, target_node, n_samples=1000):
+        results = {}
+        for node_name in network.nodes:
+            if node_name != target_node:
+                try:
+                    original_samples = sample_node(network.nodes[target_node], n_samples)
+                    perturbed_network = copy.deepcopy(network)
+                    perturbed_samples = sample_node(perturbed_network.nodes[node_name], n_samples)
+                    perturbed_network.nodes[node_name].distribution = stats.gaussian_kde(perturbed_samples)
+                    new_samples = sample_node(perturbed_network.nodes[target_node], n_samples)
+                    sensitivity = np.mean(np.abs(new_samples - original_samples))
+                    results[node_name] = sensitivity
+                except Exception as e:
+                    logging.error(f"Error in sensitivity analysis for node {node_name}: {str(e)}")
+        return results
 
     def conditional_entropy(self, node: str, given_nodes: List[str], n_samples: int = 10000) -> float:
         samples = {node: self.network.sample_node(node, n_samples) for node in [node] + given_nodes}

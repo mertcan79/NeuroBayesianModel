@@ -1,186 +1,235 @@
+from bayesian_node import BayesianNode, CategoricalNode
+from structure_learning import learn_structure
+from parameter_fitting import fit_parameters
+from inference import log_likelihood, sample_node
 import pandas as pd
 import numpy as np
 from typing import List, Dict, Any, Tuple, Callable
-from scipy import stats
-from sklearn.preprocessing import StandardScaler
 from sklearn.impute import SimpleImputer
-from pgmpy.estimators import PC, HillClimbSearch, BicScore
-from pgmpy.models import BayesianModel
 import logging
-import time
+from sklearn.model_selection import KFold
+import networkx as nx
+import matplotlib.pyplot as plt
+from scipy import stats
+import copy
+from data_processing import preprocess_data
+from tqdm import tqdm
 
-logging.basicConfig(level=logging.DEBUG)  # Change to DEBUG for more verbose logging
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-class BayesianNode:
-    def __init__(self, name: str):
-        self.name = name
-        self.parents = []
-        self.children = []
-        self.distribution = None
-        self.params = {}
-        self.scaler = StandardScaler()
-
-    def set_distribution(self, distribution, params=None):
-        self.distribution = distribution
-        self.params = params
-
-    def fit_scaler(self, data):
-        logger.debug(f"Fitting scaler for node {self.name} with data: {data}")
-        self.scaler.fit(data.reshape(-1, 1))
-
-    def transform(self, data):
-        transformed = self.scaler.transform(data.reshape(-1, 1)).flatten()
-        logger.debug(f"Transforming data for node {self.name}: {data} -> {transformed}")
-        return transformed
-
-    def inverse_transform(self, data):
-        inversed = self.scaler.inverse_transform(data.reshape(-1, 1)).flatten()
-        logger.debug(f"Inverse transforming data for node {self.name}: {data} -> {inversed}")
-        return inversed
-
 class BayesianNetwork:
-    def __init__(self, method='hill_climb', max_parents=3):
+    def __init__(self, method='k2', max_parents=5):
         self.method = method
         self.max_parents = max_parents
         self.nodes: Dict[str, BayesianNode] = {}
-        self.model = None
         self.imputer = SimpleImputer(strategy='mean')
+        self.prior_edges = {}
+        self.categorical_columns = []
+
+    def copy(self):
+        new_network = BayesianNetwork(method=self.method, max_parents=self.max_parents)
+        new_network.nodes = {name: copy.deepcopy(node) for name, node in self.nodes.items()}
+        new_network.imputer = copy.deepcopy(self.imputer)
+        new_network.prior_edges = self.prior_edges.copy()
+        return new_network
+
+    def set_edge_prior(self, parent: str, child: str, probability: float):
+        self.prior_edges[(parent, child)] = probability
+        
+    def set_categorical_columns(self, categorical_columns: List[str]):
+        self.categorical_columns = categorical_columns
 
     def fit(self, data: pd.DataFrame, prior_edges: List[tuple] = None, progress_callback: Callable[[float], None] = None):
+        preprocessed_data = preprocess_data(data)
         try:
             logger.info("Starting to learn structure")
-            self._learn_structure(data, prior_edges)
+            self._create_nodes(preprocessed_data)
+            self._learn_structure(preprocessed_data, prior_edges)
             if progress_callback:
                 progress_callback(0.5)
             logger.info("Fitting parameters")
-            self._fit_parameters(data)
+            fit_parameters(self.nodes, preprocessed_data)
             if progress_callback:
                 progress_callback(1.0)
         except Exception as e:
             logger.error(f"Error during fitting: {str(e)}")
             raise
 
+    def infer_with_missing_data(self, data: pd.DataFrame) -> pd.DataFrame:
+        results = pd.DataFrame()
+        for _, row in data.iterrows():
+            observed = {col: val for col, val in row.items() if pd.notna(val)}
+            sampled = self.metropolis_hastings(observed, num_samples=1000)
+            results = results.append(sampled, ignore_index=True)
+        return results
+
+    def feature_importance(self, target_node: str) -> Dict[str, float]:
+        sensitivity = self.compute_sensitivity(target_node)
+        total = sum(sensitivity.values())
+        return {node: value/total for node, value in sensitivity.items()}
+
     def _learn_structure(self, data: pd.DataFrame, prior_edges: List[tuple] = None):
         imputed_data = self.imputer.fit_transform(data)
         imputed_data = pd.DataFrame(imputed_data, columns=data.columns)
-        logger.debug(f"Imputed data for structure learning:\n{imputed_data.head()}")
 
-        if self.method == 'pc':
-            pc = PC(data=imputed_data)
-            skeleton, _ = pc.estimate(max_cond_vars=self.max_parents)
-            self.model = skeleton.to_directed()
-        elif self.method == 'hill_climb':
-            hc = HillClimbSearch(data=imputed_data)
-            self.model = hc.estimate(scoring_method=BicScore(data=imputed_data), max_indegree=self.max_parents)
-        else:
-            raise ValueError("Unsupported structure learning method")
+        self.nodes = learn_structure(imputed_data, method=self.method, max_parents=self.max_parents, prior_edges=self.prior_edges)
 
         if prior_edges:
             for edge in prior_edges:
-                if edge not in self.model.edges():
-                    self.model.add_edge(edge[0], edge[1])
-
-        self.nodes = {node: BayesianNode(node) for node in self.model.nodes()}
-        for edge in self.model.edges():
-            self.nodes[edge[1]].parents.append(self.nodes[edge[0]])
-            self.nodes[edge[0]].children.append(self.nodes[edge[1]])
+                if edge not in self.nodes[edge[1]].parents:
+                    self.nodes[edge[1]].parents.append(self.nodes[edge[0]])
+                    self.nodes[edge[0]].children.append(self.nodes[edge[1]])
 
         logger.info("Learned graph structure:")
         for node_name, node in self.nodes.items():
             logger.info(f"{node_name} -> parents: {[p.name for p in node.parents]}, children: {[c.name for c in node.children]}")
 
-    def _fit_parameters(self, data: pd.DataFrame):
-        imputed_data = self.imputer.transform(data)
-        imputed_data = pd.DataFrame(imputed_data, columns=data.columns)
-        logger.debug(f"Imputed data for parameter fitting:\n{imputed_data.head()}")
-
-        for node_name, node in self.nodes.items():
-            node_data = imputed_data[node_name].values
-            node.fit_scaler(node_data)
-            scaled_node_data = node.transform(node_data)
-
-            logger.debug(f"Node {node_name} - Scaled data: {scaled_node_data}")
-
-            if not node.parents:
-                mean, std = np.mean(scaled_node_data), np.std(scaled_node_data)
-                node.set_distribution(stats.norm, params={'loc': mean, 'scale': std})
-                logger.debug(f"Node {node_name} - Distribution parameters (mean, std): {mean}, {std}")
-            else:
-                parent_data = np.column_stack([self.nodes[p.name].transform(imputed_data[p.name].values) for p in node.parents])
-                beta = np.linalg.lstsq(parent_data, scaled_node_data, rcond=None)[0]
-                residuals = scaled_node_data - parent_data.dot(beta)
-                std = np.std(residuals)
-                node.set_distribution(stats.norm, params={'beta': beta, 'scale': std})
-                logger.debug(f"Node {node_name} - Parameters (beta, std): {beta}, {std}")
-
-        logger.info("Fitted parameters")
-
     def log_likelihood(self, data: pd.DataFrame) -> float:
-        imputed_data = self.imputer.transform(data)
-        imputed_data = pd.DataFrame(imputed_data, columns=data.columns)
-        logger.debug(f"Imputed data for log-likelihood calculation:\n{imputed_data.head()}")
+        return log_likelihood(self.nodes, data)
 
-        log_likelihood = 0.0
-        for _, row in imputed_data.iterrows():
-            for node_name, node in self.nodes.items():
-                scaled_value = node.transform(row[node_name])
-                logger.debug(f"Node {node_name} - Scaled value: {scaled_value}")
+    def sample_node(self, node_name: str, size: int = 1) -> np.ndarray:
+        node = self.nodes.get(node_name)
+        if not node:
+            raise ValueError(f"Node {node_name} not found in the network")
+        
+        if callable(node.distribution):
+            return node.distribution(size)
+        elif hasattr(node.distribution, 'rvs'):
+            return node.distribution.rvs(size=size)
+        else:
+            raise ValueError(f"Unsupported distribution type for node {node.name}")
 
-                if not node.parents:
-                    # Node without parents
-                    log_likelihood += node.distribution.logpdf(scaled_value, **node.params)
-                else:
-                    # Node with parents
-                    parent_values = np.array([self.nodes[p.name].transform(row[p.name]) for p in node.parents])
-                    logger.debug(f"Node {node_name} - Parent values shape: {parent_values.shape}")
-                    logger.debug(f"Node {node_name} - Beta shape: {node.params['beta'].shape}")
-                    
-                    # Ensure correct shape for beta and parent_values
-                    if parent_values.ndim == 1:
-                        parent_values = parent_values.reshape(-1, 1)  # Reshape to (n, 1)
-                    
-                    loc = np.dot(parent_values.T, node.params['beta'])  # Transpose parent_values for dot product
-                    scale = node.params['scale']
-                    logger.debug(f"Node {node_name} - Location: {loc}, Scale: {scale}")
-                    
-                    log_likelihood += node.distribution.logpdf(scaled_value, loc=loc, scale=scale)
-
-        logger.info(f"Total log-likelihood: {log_likelihood}")
-        return float(log_likelihood)
-
-    def cross_validate(self, data: pd.DataFrame, k_folds: int = 5, timeout: int = 300) -> Tuple[float, float]:
-        from sklearn.model_selection import KFold
+    def cross_validate(self, data: pd.DataFrame, k_folds: int = 5) -> Tuple[float, float]:
         kf = KFold(n_splits=k_folds, shuffle=True, random_state=42)
         log_likelihoods = []
 
-        start_time = time.time()
         for i, (train_index, test_index) in enumerate(kf.split(data)):
-            if time.time() - start_time > timeout:
-                logger.warning(f"Cross-validation timed out after {timeout} seconds")
-                break
-
             logger.info(f"Starting fold {i+1}/{k_folds}")
             train_data, test_data = data.iloc[train_index], data.iloc[test_index]
             
-            self.fit(train_data)
-            log_likelihood = self.log_likelihood(test_data)
+            # Create a new instance of BayesianNetwork for each fold
+            fold_bn = BayesianNetwork(method=self.method, max_parents=self.max_parents)
+            fold_bn.fit(train_data)
+            
+            log_likelihood = fold_bn.log_likelihood(test_data)
             log_likelihoods.append(log_likelihood)
             logger.info(f"Completed fold {i+1}/{k_folds}, log-likelihood: {log_likelihood}")
 
-        if len(log_likelihoods) == 0:
-            logger.error("No folds completed in cross-validation")
-            return float('nan'), float('nan')
-        
         return float(np.mean(log_likelihoods)), float(np.std(log_likelihoods))
 
-    def sample_node(self, node_name: str, size: int = 1) -> np.ndarray:
-        node = self.nodes[node_name]
-        if not node.parents:
-            samples = node.distribution.rvs(size=size, **node.params)
-        else:
-            parent_values = np.column_stack([self.sample_node(p.name, size) for p in node.parents])
-            parent_values_scaled = np.column_stack([self.nodes[p.name].transform(parent_values[:, i]) for i, p in enumerate(node.parents)])
-            loc = np.dot(parent_values_scaled, node.params['beta'])
-            samples = node.distribution.rvs(loc=loc, scale=node.params['scale'], size=size)
-        return node.inverse_transform(samples.reshape(-1, 1))
+    def _create_nodes(self, data: pd.DataFrame):
+        for column in data.columns:
+            if column in self.categorical_columns:
+                categories = data[column].unique().tolist()
+                self.nodes[column] = CategoricalNode(column, categories)
+            else:
+                self.nodes[column] = BayesianNode(column)
+
+    def explain_structure(self) -> Dict[str, List[str]]:
+        """
+        Explain the structure of the Bayesian Network.
+        """
+        return {node: [parent.name for parent in self.nodes[node].parents] for node in self.nodes}
+    
+    def explain_prediction(self, node: str, observation: Dict[str, Any]) -> str:
+        parents = self.nodes[node].parents
+        if not parents:
+            return f"{node} is a root node and doesn't depend on other variables."
+        
+        explanation = f"{node} is influenced by: "
+        for parent in parents:
+            parent_value = observation.get(parent.name, "Unknown")
+            explanation += f"\n- {parent.name} (value: {parent_value})"
+        
+        return explanation   
+
+    def marginal_effect(self, target_node: str, input_node: str, num_samples: int = 1000) -> pd.DataFrame:
+        input_values = np.linspace(self.nodes[input_node].distribution.ppf(0.01),
+                                   self.nodes[input_node].distribution.ppf(0.99),
+                                   num=20)
+        effects = []
+        for value in input_values:
+            samples = self.sample_node(target_node, size=num_samples, conditions={input_node: value})
+            effects.append(np.mean(samples))
+        
+        return pd.DataFrame({input_node: input_values, f"Effect on {target_node}": effects})
+
+    
+    def compute_sensitivity(self, target_node: str, num_samples: int = 10000) -> Dict[str, float]:
+        sensitivity = {}
+        base_samples = self.sample_node(target_node, size=num_samples)
+        
+        for node_name, node in self.nodes.items():
+            if node_name != target_node:
+                try:
+                    perturbed_network = self.copy()
+                    perturbed_samples = perturbed_network.sample_node(node_name, size=num_samples)
+                    
+                    if isinstance(node, BayesianNode):  # Continuous node
+                        kde = stats.gaussian_kde(perturbed_samples)
+                        perturbed_network.nodes[node_name].distribution = lambda size: kde.resample(size)[0]
+                    elif isinstance(node, CategoricalNode):  # Categorical node
+                        counts = np.bincount(perturbed_samples, minlength=len(node.categories))
+                        perturbed_network.nodes[node_name].set_distribution(counts)
+                    
+                    perturbed_output = perturbed_network.sample_node(target_node, size=num_samples)
+                    sensitivity[node_name] = np.mean(np.abs(perturbed_output - base_samples))
+                except Exception as e:
+                    logger.error(f"Error in sensitivity analysis for node {node_name}: {str(e)}")
+                    sensitivity[node_name] = np.nan
+        
+        return sensitivity
+
+    def metropolis_hastings(self, observed_data: Dict[str, Any], num_samples: int = 1000) -> Dict[str, List[Any]]:
+        current_state = {node: self.sample_node(node, size=1).flatten()[0] for node in self.nodes}
+        samples = {node: [] for node in self.nodes}
+
+        for _ in range(num_samples):
+            proposed_state = current_state.copy()
+            node_to_change = np.random.choice(list(self.nodes.keys()))
+            proposed_state[node_to_change] = self.sample_node(node_to_change, size=1).flatten()[0]
+
+            current_likelihood = self.log_likelihood(pd.DataFrame([current_state]))
+            proposed_likelihood = self.log_likelihood(pd.DataFrame([proposed_state]))
+
+            if np.log(np.random.random()) < proposed_likelihood - current_likelihood:
+                current_state = proposed_state
+
+            for node, value in current_state.items():
+                if node not in observed_data:
+                    samples[node].append(value)
+
+        return samples
+
+    def sensitivity_analysis(self, target_node, n_samples=1000):
+        results = {}
+        for node_name in self.nodes:
+            if node_name != target_node:
+                try:
+                    original_samples = self.sample_node(self.nodes[target_node], n_samples)
+                    perturbed_network = copy.deepcopy(self)
+                    perturbed_samples = self.sample_node(perturbed_network.nodes[node_name], n_samples)
+                    perturbed_network.nodes[node_name].distribution = stats.gaussian_kde(perturbed_samples)
+                    new_samples = perturbed_network.sample_node(perturbed_network.nodes[target_node], n_samples)
+                    sensitivity = np.mean(np.abs(new_samples - original_samples))
+                    results[node_name] = sensitivity
+                except Exception as e:
+                    logging.error(f"Error in sensitivity analysis for node {node_name}: {str(e)}")
+        return results
+    
+    def train(self, data, iterations):
+        for _ in tqdm(range(iterations), desc="Training Network"):
+            self.fit(data)
+            
+    def k_fold_cross_validation(network, data, k=5):
+        kf = KFold(n_splits=k, shuffle=True, random_state=42)
+        log_likelihoods = []
+
+        for train_index, test_index in kf.split(data):
+            train_data, test_data = data.iloc[train_index], data.iloc[test_index]
+            network.fit(train_data)
+            log_likelihood = network.log_likelihood(test_data)
+            log_likelihoods.append(log_likelihood)
+
+        return np.mean(log_likelihoods), np.std(log_likelihoods)
