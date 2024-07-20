@@ -65,9 +65,9 @@ class BayesianNetwork:
         return results
 
     def feature_importance(self, target_node: str) -> Dict[str, float]:
-        sensitivity = self.compute_sensitivity(target_node)
+        sensitivity = self.sensitivity_analysis(target_node)
         total = sum(sensitivity.values())
-        return {node: value/total for node, value in sensitivity.items()}
+        return {node: value/total for node, value in sensitivity.items() if total != 0}
 
     def _learn_structure(self, data: pd.DataFrame, prior_edges: List[tuple] = None):
         imputed_data = self.imputer.fit_transform(data)
@@ -89,16 +89,28 @@ class BayesianNetwork:
         return log_likelihood(self.nodes, data)
 
     def sample_node(self, node_name: str, size: int = 1) -> np.ndarray:
-        node = self.nodes.get(node_name)
-        if not node:
-            raise ValueError(f"Node {node_name} not found in the network")
-        
-        if callable(node.distribution):
-            return node.distribution(size)
-        elif hasattr(node.distribution, 'rvs'):
-            return node.distribution.rvs(size=size)
+        print(f"sample_node called with node_name: {node_name}, size: {size}")
+        node = self.nodes[node_name]
+        if not node.parents:
+            if isinstance(node, CategoricalNode):
+                samples = node.sample(size)
+            elif callable(node.distribution):
+                try:
+                    samples = node.distribution.rvs(size=size)
+                except AttributeError:
+                    samples = np.array([node.distribution() for _ in range(size)])
+            else:
+                raise ValueError(f"Unsupported distribution type for node {node_name}")
         else:
-            raise ValueError(f"Unsupported distribution type for node {node.name}")
+            parent_values = np.column_stack([self.sample_node(p.name, size) for p in node.parents])
+            if isinstance(node, CategoricalNode):
+                samples = node.sample(size)
+            else:
+                loc = np.dot(parent_values, node.params.get('beta', np.zeros(parent_values.shape[1])))
+                scale = node.params.get('scale', 1.0)
+                samples = node.distribution.rvs(loc=loc, scale=scale, size=size)
+        
+        return np.array(samples).reshape(-1)
 
     def cross_validate(self, data: pd.DataFrame, k_folds: int = 5) -> Tuple[float, float]:
         kf = KFold(n_splits=k_folds, shuffle=True, random_state=42)
@@ -127,9 +139,6 @@ class BayesianNetwork:
                 self.nodes[column] = BayesianNode(column)
 
     def explain_structure(self) -> Dict[str, List[str]]:
-        """
-        Explain the structure of the Bayesian Network.
-        """
         return {node: [parent.name for parent in self.nodes[node].parents] for node in self.nodes}
     
     def explain_prediction(self, node: str, observation: Dict[str, Any]) -> str:
@@ -182,13 +191,13 @@ class BayesianNetwork:
         return sensitivity
 
     def metropolis_hastings(self, observed_data: Dict[str, Any], num_samples: int = 1000) -> Dict[str, List[Any]]:
-        current_state = {node: self.sample_node(node, size=1).flatten()[0] for node in self.nodes}
+        current_state = {node: self.sample_node(node, size=1)[0] for node in self.nodes}
         samples = {node: [] for node in self.nodes}
 
         for _ in range(num_samples):
             proposed_state = current_state.copy()
             node_to_change = np.random.choice(list(self.nodes.keys()))
-            proposed_state[node_to_change] = self.sample_node(node_to_change, size=1).flatten()[0]
+            proposed_state[node_to_change] = self.sample_node(node_to_change, size=1)[0]
 
             current_likelihood = self.log_likelihood(pd.DataFrame([current_state]))
             proposed_likelihood = self.log_likelihood(pd.DataFrame([proposed_state]))
@@ -202,16 +211,26 @@ class BayesianNetwork:
 
         return samples
 
-    def sensitivity_analysis(self, target_node, n_samples=1000):
+    def sensitivity_analysis(self, target_node: str, n_samples: int = 1000) -> Dict[str, float]:
         results = {}
         for node_name in self.nodes:
             if node_name != target_node:
                 try:
-                    original_samples = self.sample_node(self.nodes[target_node], n_samples)
-                    perturbed_network = copy.deepcopy(self)
-                    perturbed_samples = self.sample_node(perturbed_network.nodes[node_name], n_samples)
-                    perturbed_network.nodes[node_name].distribution = stats.gaussian_kde(perturbed_samples)
-                    new_samples = perturbed_network.sample_node(perturbed_network.nodes[target_node], n_samples)
+                    print(f"Calling sample_node for {target_node} with {n_samples} samples")
+                    original_samples = self.sample_node(target_node, size=n_samples)
+                    
+                    perturbed_network = self.copy()
+                    print(f"Calling sample_node for {node_name} with {n_samples} samples")
+                    perturbed_samples = perturbed_network.sample_node(node_name, size=n_samples)
+                    
+                    if isinstance(perturbed_network.nodes[node_name], CategoricalNode):
+                        counts = np.bincount(perturbed_samples, minlength=len(perturbed_network.nodes[node_name].categories))
+                        perturbed_network.nodes[node_name].set_distribution(counts)
+                    else:
+                        kde = stats.gaussian_kde(perturbed_samples)
+                        perturbed_network.nodes[node_name].distribution = lambda size: kde.resample(size)[0]
+                    
+                    new_samples = perturbed_network.sample_node(target_node, size=n_samples)
                     sensitivity = np.mean(np.abs(new_samples - original_samples))
                     results[node_name] = sensitivity
                 except Exception as e:
