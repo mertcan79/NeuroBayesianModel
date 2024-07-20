@@ -9,9 +9,8 @@ import copy
 
 from bayesian_node import BayesianNode, CategoricalNode
 from structure_learning import learn_structure
-from parameter_fitting import fit_parameters
+from parameter_fitting import fit_parameters, preprocess_data
 from inference import log_likelihood, sample_node
-from data_processing import preprocess_data
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)

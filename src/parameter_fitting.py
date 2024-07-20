@@ -4,6 +4,7 @@ from typing import Dict
 from scipy import stats
 from bayesian_node import BayesianNode
 import logging
+from sklearn.impute import SimpleImputer
 
 logger = logging.getLogger(__name__)
 
@@ -24,3 +25,22 @@ def fit_parameters(nodes: Dict[str, BayesianNode], data: pd.DataFrame):
             node.set_distribution(stats.norm, params={'beta': beta, 'scale': std})
         
         logger.info(f"Fitted parameters for node {node_name}: {node.params}")
+
+
+def preprocess_data(data: pd.DataFrame) -> pd.DataFrame:
+    data = data.copy()
+    
+    numeric_columns = data.select_dtypes(include=[np.number]).columns
+    categorical_columns = data.select_dtypes(exclude=[np.number]).columns
+    
+    numeric_imputer = SimpleImputer(strategy='mean')
+    categorical_imputer = SimpleImputer(strategy='most_frequent')
+    
+    if len(numeric_columns) > 0:
+        data[numeric_columns] = numeric_imputer.fit_transform(data[numeric_columns])
+    
+    if len(categorical_columns) > 0:
+        data[categorical_columns] = categorical_imputer.fit_transform(data[categorical_columns])
+    
+    return data
+
