@@ -1,6 +1,8 @@
 ssh -i /Users/macbookair/Documents/bayesian_dataclass/ssh-key-2024-07-20.key opc@89.168.23.116
 
 
+ssh -i /Users/macbookair/Documents/private/ssh-key-2024-07-20.key ubuntu@89.168.23.116
+
 
 sudo yum install -y git
 
