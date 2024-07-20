@@ -121,8 +121,9 @@ class BayesianNetwork:
 
     def visualize(self, filename: str = None):
         plt.figure(figsize=(12, 8))
-        nx.draw(self.graph, with_labels=True, node_color='lightblue', 
-                node_size=3000, font_size=12, font_weight='bold')
+        pos = nx.spring_layout(self.graph)  # or nx.kamada_kaway_layout(self.graph) or other layout
+        nx.draw(self.graph, pos, with_labels=True, node_color='lightblue', 
+                node_size=3000, font_size=12, font_weight='bold', arrows=True)
         plt.title("Bayesian Network Structure")
         if filename:
             plt.savefig(filename)
