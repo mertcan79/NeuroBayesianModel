@@ -17,7 +17,13 @@ def generate_synthetic_data(n_samples):
     C = np.sin(B) + np.random.normal(0, 0.1, n_samples)
     D = np.exp(0.1 * C) + np.random.normal(0, 0.1, n_samples)
     E = 0.5 * A + 0.5 * C + np.random.normal(0, 0.1, n_samples)
-    return pd.DataFrame({'A': A, 'B': B, 'C': C, 'D': D, 'E': E})
+    df = pd.DataFrame({'A': A, 'B': B, 'C': C, 'D': D, 'E': E})
+    
+    # Discretize the data
+    for col in df.columns:
+        df[col] = pd.qcut(df[col], q=5, labels=False)
+    
+    return df
 
 def parallel_sensitivity_analysis(args):
     bn, node, other_nodes = args
@@ -27,9 +33,10 @@ def parallel_sensitivity_analysis(args):
 if __name__ == "__main__":
     start_time = time.time()
 
-    # Generate a larger synthetic dataset
+    # Generate a smaller synthetic dataset
     print("Generating synthetic data...")
-    data = generate_synthetic_data(n_samples=100000)
+    data = generate_synthetic_data(n_samples=1000)  # Reduced from 100,000 to 10,000
+
 
     # Split data into train and test sets
     train_data, test_data = train_test_split(data, test_size=0.2, random_state=42)

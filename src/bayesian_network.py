@@ -29,17 +29,16 @@ class BayesianNetwork:
         for parent in node.parents:
             self.graph.add_edge(parent.name, node.name)
 
-    def learn_structure(self, data: pd.DataFrame, prior_edges: List[tuple] = None, method: str = 'hill_climb', max_parents: int = 3):
+    def learn_structure(self, data: pd.DataFrame, prior_edges: List[tuple] = None, method: str = 'pc', max_parents: int = 3):
         # Preprocess data
         imputed_data = self.imputer.fit_transform(data)
         scaled_data = self.scaler.fit_transform(imputed_data)
         scaled_data = pd.DataFrame(scaled_data, columns=data.columns)
 
-        if method == 'hill_climb':
-            hc = HillClimbSearch(scaled_data)
-            scoring_method = BicScore(data=scaled_data)
-            scoring_method.max_parents = max_parents
-            est_model = hc.estimate(scoring_method=scoring_method)
+        if method == 'pc':
+            pc = PC(data=scaled_data)
+            skeleton, separating_sets = pc.estimate(max_cond_vars=max_parents)
+            est_model = skeleton.to_directed()
         else:
             raise ValueError("Unsupported structure learning method")
 
@@ -53,16 +52,6 @@ class BayesianNetwork:
                     model.add_edge(edge[0], edge[1])
 
         self.graph = model.to_directed()
-
-        # Update nodes based on learned structure
-        self.nodes = {col: BayesianNode(col, None) for col in data.columns}
-        for edge in self.graph.edges():
-            self.nodes[edge[1]].parents.append(self.nodes[edge[0]])
-            self.nodes[edge[0]].children.append(self.nodes[edge[1]])
-
-        print("Learned graph structure:")
-        for node, neighbors in self.graph.adj.items():
-            print(f"{node} -> {list(neighbors.keys())}")
 
         # Update nodes based on learned structure
         self.nodes = {col: BayesianNode(col, None) for col in data.columns}
