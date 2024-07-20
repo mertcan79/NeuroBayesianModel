@@ -9,7 +9,7 @@ import copy
 
 from bayesian_node import BayesianNode, CategoricalNode
 from structure_learning import learn_structure
-from parameter_fitting import fit_parameters, preprocess_data
+from parameter_fitting import fit_parameters
 from inference import log_likelihood, sample_node
 
 logging.basicConfig(level=logging.INFO)
@@ -20,15 +20,13 @@ class BayesianNetwork:
         self.method = method
         self.max_parents = max_parents
         self.nodes = {}
-        self.imputer = SimpleImputer(strategy='mean')
-        self.prior_edges = {}
         self.categorical_columns = categorical_columns or []
-
-    def set_categorical_columns(self, columns):
-        self.categorical_columns = columns
+        self.numeric_imputer = SimpleImputer(strategy='mean')
+        self.categorical_imputer = SimpleImputer(strategy='most_frequent')
+        self.prior_edges = {}
 
     def fit(self, data: pd.DataFrame, prior_edges: List[tuple] = None, progress_callback: Callable[[float], None] = None):
-        preprocessed_data = preprocess_data(data)
+        preprocessed_data = self.preprocess_data(data)
         try:
             logger.info("Learning structure")
             self._create_nodes(preprocessed_data)
@@ -43,15 +41,38 @@ class BayesianNetwork:
             logger.error(f"Error during fitting: {str(e)}")
             raise
 
+    def preprocess_data(self, data: pd.DataFrame) -> pd.DataFrame:
+        data = data.copy()
+        
+        numeric_columns = [col for col in data.columns if col not in self.categorical_columns]
+        
+        if numeric_columns:
+            data[numeric_columns] = self.numeric_imputer.fit_transform(data[numeric_columns])
+        
+        if self.categorical_columns:
+            data[self.categorical_columns] = self.categorical_imputer.fit_transform(data[self.categorical_columns])
+        
+        return data
+
     def _learn_structure(self, data: pd.DataFrame, prior_edges: List[tuple] = None):
-        imputed_data = self.imputer.fit_transform(data)
-        imputed_data = pd.DataFrame(imputed_data, columns=data.columns)
-        self.nodes = learn_structure(imputed_data, method=self.method, max_parents=self.max_parents, prior_edges=self.prior_edges)
+        self.nodes = learn_structure(data, method=self.method, max_parents=self.max_parents, prior_edges=self.prior_edges)
         if prior_edges:
             for edge in prior_edges:
-                if edge not in self.nodes[edge[1]].parents:
+                if edge[1] not in self.nodes:
+                    self.nodes[edge[1]] = BayesianNode(edge[1])
+                if edge[0] not in self.nodes:
+                    self.nodes[edge[0]] = BayesianNode(edge[0])
+                if self.nodes[edge[0]] not in self.nodes[edge[1]].parents:
                     self.nodes[edge[1]].parents.append(self.nodes[edge[0]])
                     self.nodes[edge[0]].children.append(self.nodes[edge[1]])
+
+    def _create_nodes(self, data: pd.DataFrame):
+        for column in data.columns:
+            if column in self.categorical_columns:
+                categories = data[column].unique().tolist()
+                self.nodes[column] = CategoricalNode(column, categories)
+            else:
+                self.nodes[column] = BayesianNode(column)
 
     def log_likelihood(self, data: pd.DataFrame) -> float:
         return log_likelihood(self.nodes, data)
@@ -92,14 +113,6 @@ class BayesianNetwork:
             fold_bn.fit(train_data)
             log_likelihoods.append(fold_bn.log_likelihood(test_data))
         return float(np.mean(log_likelihoods)), float(np.std(log_likelihoods))
-
-    def _create_nodes(self, data: pd.DataFrame):
-        for column in data.columns:
-            if column in self.categorical_columns:
-                categories = data[column].unique().tolist()
-                self.nodes[column] = CategoricalNode(column, categories)
-            else:
-                self.nodes[column] = BayesianNode(column)
 
     def compute_sensitivity(self, target_node: str, num_samples: int = 10000) -> Dict[str, float]:
         sensitivity = {}
@@ -157,3 +170,4 @@ class BayesianNetwork:
         for node_name, node in self.nodes.items():
             structure[node_name] = [parent.name for parent in node.parents]
         return structure
+    
