@@ -25,18 +25,15 @@ class BayesianNetwork:
         for parent in node.parents:
             self.graph.add_edge(parent.name, node.name)
 
-    def learn_structure(self, data: pd.DataFrame, prior_edges: List[tuple] = None, method: str = 'mmhc'):
+    def learn_structure(self, data: pd.DataFrame, prior_edges: List[tuple] = None, method: str = 'hill_climb', max_parents: int = 3):
         # Preprocess data
         imputed_data = self.imputer.fit_transform(data)
         scaled_data = self.scaler.fit_transform(imputed_data)
         scaled_data = pd.DataFrame(scaled_data, columns=data.columns)
 
-        if method == 'mmhc':
-            est = MmhcEstimator(scaled_data)
-            est_model = est.estimate()
-        elif method == 'hill_climb':
+        if method == 'hill_climb':
             hc = HillClimbSearch(scaled_data)
-            est_model = hc.estimate()
+            est_model = hc.estimate(max_parents=max_parents)
         else:
             raise ValueError("Unsupported structure learning method")
 
