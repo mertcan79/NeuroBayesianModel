@@ -3,7 +3,7 @@ import numpy as np
 import networkx as nx
 from typing import List, Dict, Any, Tuple
 from bayesian_node import BayesianNode
-from pgmpy.estimators import MmhcEstimator, HillClimbSearch, BayesianEstimator
+from pgmpy.estimators import MmhcEstimator, HillClimbSearch, BayesianEstimator, BDeuScore
 from pgmpy.models import BayesianNetwork as PgmpyBN
 from scipy import stats
 from sklearn.gaussian_process import GaussianProcessRegressor
@@ -25,35 +25,45 @@ class BayesianNetwork:
         for parent in node.parents:
             self.graph.add_edge(parent.name, node.name)
 
-    def learn_structure(self, data: pd.DataFrame, prior_edges: List[tuple] = None, method: str = 'hill_climb', max_parents: int = 3):
-        # Preprocess data
-        imputed_data = self.imputer.fit_transform(data)
-        scaled_data = self.scaler.fit_transform(imputed_data)
-        scaled_data = pd.DataFrame(scaled_data, columns=data.columns)
+def learn_structure(self, data: pd.DataFrame, prior_edges: List[tuple] = None, method: str = 'hill_climb', max_parents: int = 3):
+    # Preprocess data
+    imputed_data = self.imputer.fit_transform(data)
+    scaled_data = self.scaler.fit_transform(imputed_data)
+    scaled_data = pd.DataFrame(scaled_data, columns=data.columns)
 
-        if method == 'hill_climb':
-            hc = HillClimbSearch(scaled_data)
-            est_model = hc.estimate(max_parents=max_parents)
-        else:
-            raise ValueError("Unsupported structure learning method")
+    if method == 'hill_climb':
+        # Create a scoring method with max_parents constraint
+        scoring_method = BDeuScore(data=scaled_data, equivalent_sample_size=10)
+        
+        # Initialize the HillClimbSearch with the scoring method
+        hc = HillClimbSearch(scaled_data)
+        
+        # Estimate the structure
+        est_model = hc.estimate(
+            scoring_method=scoring_method,
+            max_indegree=max_parents,
+            max_iter=int(1e4)
+        )
+    else:
+        raise ValueError("Unsupported structure learning method")
 
-        # Incorporate prior knowledge if provided
-        if prior_edges:
-            for edge in prior_edges:
-                if edge not in est_model.edges():
-                    est_model.add_edge(edge[0], edge[1])
+    # Incorporate prior knowledge if provided
+    if prior_edges:
+        for edge in prior_edges:
+            if edge not in est_model.edges():
+                est_model.add_edge(edge[0], edge[1])
 
-        self.graph = est_model.to_directed()
+    self.graph = est_model.to_directed()
 
-        # Update nodes based on learned structure
-        self.nodes = {col: BayesianNode(col, None) for col in data.columns}
-        for edge in self.graph.edges():
-            self.nodes[edge[1]].parents.append(self.nodes[edge[0]])
-            self.nodes[edge[0]].children.append(self.nodes[edge[1]])
+    # Update nodes based on learned structure
+    self.nodes = {col: BayesianNode(col, None) for col in data.columns}
+    for edge in self.graph.edges():
+        self.nodes[edge[1]].parents.append(self.nodes[edge[0]])
+        self.nodes[edge[0]].children.append(self.nodes[edge[1]])
 
-        print("Learned graph structure:")
-        for node, neighbors in self.graph.adj.items():
-            print(f"{node} -> {list(neighbors.keys())}")
+    print("Learned graph structure:")
+    for node, neighbors in self.graph.adj.items():
+        print(f"{node} -> {list(neighbors.keys())}")
 
     def fit(self, data: pd.DataFrame):
         imputed_data = self.imputer.transform(data)
