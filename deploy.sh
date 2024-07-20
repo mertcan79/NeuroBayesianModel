@@ -17,11 +17,11 @@ fi
 
 # Upload changes to GitHub
 git add .
-git commit -m "Automated commit"  # Customize the commit message as needed
+git commit -m "new auto commit"  # Customize the commit message as needed
 git push $REMOTE_NAME $BRANCH_NAME
 
 # Pull latest changes on Oracle server
-ssh username@oracle_server "cd /path/to/your/project && git pull $REMOTE_NAME $BRANCH_NAME"
+ssh frapper79@89.168.23.116 "cd /bayesian_dataclass && git pull $REMOTE_NAME $BRANCH_NAME"
 
 # Run the Python script
-ssh username@oracle_server "cd /path/to/your/project && python3 $SCRIPT_PATH"
+ssh frapper79@89.168.23.116 "cd /bayesian_dataclass && python3 $SCRIPT_PATH"

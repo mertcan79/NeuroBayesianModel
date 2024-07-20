@@ -1,31 +1,24 @@
 import pandas as pd
 import numpy as np
-import networkx as nx
-import matplotlib.pyplot as plt
 from typing import List, Dict, Any, Tuple, Callable
 from scipy import stats
-from sklearn.gaussian_process import GaussianProcessRegressor
-from sklearn.gaussian_process.kernels import RBF, WhiteKernel, Matern
 from sklearn.preprocessing import StandardScaler
 from sklearn.impute import SimpleImputer
-from pgmpy.estimators import PC, HillClimbSearch, BicScore
+from pgmpy.estimators import HillClimbSearch, BicScore
 from pgmpy.models import BayesianModel
 import logging
-from graphviz import Digraph
-
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 class BayesianNetwork:
-    def __init__(self, method='pc', max_parents=3):
-        self.method = method
+    def __init__(self, max_parents=3):
         self.max_parents = max_parents
         self.nodes: Dict[str, Any] = {}
-        self.graph = nx.DiGraph()
+        self.model = None
         self.scaler = StandardScaler()
         self.imputer = SimpleImputer(strategy='mean')
-        
+
     def fit(self, data: pd.DataFrame, prior_edges: List[tuple] = None, progress_callback: Callable[[float], None] = None):
         try:
             self._learn_structure(data, prior_edges)
@@ -43,47 +36,22 @@ class BayesianNetwork:
         scaled_data = self.scaler.fit_transform(imputed_data)
         scaled_data = pd.DataFrame(scaled_data, columns=data.columns)
 
-        if self.method == 'pc':
-            try:
-                pc = PC(data=scaled_data)
-                result = pc.estimate(max_cond_vars=self.max_parents)
-                if isinstance(result, tuple) and len(result) == 2:
-                    skeleton, separating_sets = result
-                    est_model = skeleton.to_directed()
-                else:
-                    logger.warning("PC algorithm did not return expected output. Falling back to Hill-Climb search.")
-                    self.method = 'hill_climb'
-            except Exception as e:
-                logger.warning(f"Error in PC algorithm: {str(e)}. Falling back to Hill-Climb search.")
-                self.method = 'hill_climb'
+        hc = HillClimbSearch(data=scaled_data)
+        est_model = hc.estimate(scoring_method=BicScore(data=scaled_data), max_indegree=self.max_parents)
 
-        if self.method == 'hill_climb':
-            hc = HillClimbSearch(data=scaled_data)
-            est_model = hc.estimate(scoring_method=BicScore(data=scaled_data), max_indegree=self.max_parents)
-        else:
-            raise ValueError("Unsupported structure learning method")
-
-        model = BayesianModel(est_model.edges())
+        self.model = BayesianModel(est_model.edges())
 
         if prior_edges:
             for edge in prior_edges:
-                if edge not in model.edges():
-                    model.add_edge(edge[0], edge[1])
+                if edge not in self.model.edges():
+                    self.model.add_edge(edge[0], edge[1])
 
-        self.graph = model.to_directed()
-
-        self.nodes = {col: {} for col in data.columns}
-        for edge in self.graph.edges():
-            if 'parents' not in self.nodes[edge[1]]:
-                self.nodes[edge[1]]['parents'] = []
-            if 'children' not in self.nodes[edge[0]]:
-                self.nodes[edge[0]]['children'] = []
-            self.nodes[edge[1]]['parents'].append(edge[0])
-            self.nodes[edge[0]]['children'].append(edge[1])
+        self.nodes = {node: {'parents': self.model.get_parents(node), 'children': self.model.get_children(node)} 
+                      for node in self.model.nodes()}
 
         logger.info("Learned graph structure:")
-        for node, neighbors in self.graph.adj.items():
-            logger.info(f"{node} -> {list(neighbors.keys())}")
+        for node, data in self.nodes.items():
+            logger.info(f"{node} -> parents: {data['parents']}, children: {data['children']}")
 
     def _fit_parameters(self, data: pd.DataFrame):
         imputed_data = self.imputer.transform(data)
@@ -91,38 +59,28 @@ class BayesianNetwork:
         scaled_data = pd.DataFrame(scaled_data, columns=data.columns)
 
         for node_name, node in self.nodes.items():
-            if 'parents' not in node or not node['parents']:
-                node_data = scaled_data[node_name].values
+            node_data = scaled_data[node_name].values
+            if not node['parents']:
                 mean, std = np.mean(node_data), np.std(node_data)
                 node['distribution'] = stats.norm(loc=mean, scale=std)
             else:
-                parent_names = node['parents']
-                X = scaled_data[parent_names].values
-                y = scaled_data[node_name].values
-                
-                kernel = RBF() + WhiteKernel() + Matern()
-                gp = GaussianProcessRegressor(kernel=kernel, n_restarts_optimizer=10, alpha=0.1)
-                gp.fit(X, y)
-                
-                node['distribution'] = lambda x, gp=gp: stats.norm(
-                    loc=gp.predict(x.reshape(1, -1) if x.ndim == 1 else x)[0],
-                    scale=np.sqrt(gp.predict(x.reshape(1, -1) if x.ndim == 1 else x, return_std=True)[1][0])
+                parent_data = scaled_data[node['parents']].values
+                beta = np.linalg.lstsq(parent_data, node_data, rcond=None)[0]
+                residuals = node_data - parent_data.dot(beta)
+                std = np.std(residuals)
+                node['distribution'] = lambda x, beta=beta, std=std: stats.norm(
+                    loc=x.dot(beta), scale=std
                 )
 
-        logger.info("Fitted parameters:")
-        for node_name, node in self.nodes.items():
-            if callable(node['distribution']):
-                logger.info(f"{node_name}: Gaussian Process (non-linear conditional distribution)")
-            else:
-                logger.info(f"{node_name}: Mean = {node['distribution'].mean():.4f}, Std = {node['distribution'].std():.4f}")
+        logger.info("Fitted parameters")
 
     def sample_node(self, node_name: str, size: int = 1) -> np.ndarray:
         node = self.nodes[node_name]
-        if 'parents' in node and node['parents']:
+        if not node['parents']:
+            samples = node['distribution'].rvs(size=size)
+        else:
             parent_values = np.array([self.sample_node(parent, size) for parent in node['parents']]).T
             samples = node['distribution'](parent_values).rvs(size=size)
-        else:
-            samples = node['distribution'].rvs(size=size)
         return self.scaler.inverse_transform(samples.reshape(-1, 1)).flatten()
 
     def log_likelihood(self, data: pd.DataFrame) -> float:
@@ -133,23 +91,12 @@ class BayesianNetwork:
         log_likelihood = 0
         for _, row in scaled_data.iterrows():
             for node_name, node in self.nodes.items():
-                if 'parents' in node and node['parents']:
+                if not node['parents']:
+                    log_likelihood += node['distribution'].logpdf(row[node_name])
+                else:
                     parent_values = row[node['parents']].values
                     log_likelihood += np.log(node['distribution'](parent_values).pdf(row[node_name]))
-                else:
-                    log_likelihood += node['distribution'].logpdf(row[node_name])
         return log_likelihood
-
-    def visualize(self, filename: str = None):
-        dot = Digraph()
-        for node in self.graph.nodes:
-            dot.node(node)
-        for edge in self.graph.edges:
-            dot.edge(edge[0], edge[1])
-        if filename:
-            dot.render(filename, format='png')
-        else:
-            dot.view()
 
     def cross_validate(self, data: pd.DataFrame, k_folds: int = 5) -> Tuple[float, float]:
         from sklearn.model_selection import KFold
