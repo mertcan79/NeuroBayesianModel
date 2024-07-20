@@ -17,13 +17,16 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 class BayesianNetwork:
-    def __init__(self, method='k2', max_parents=5):
+    def __init__(self, method='k2', max_parents=5, categorical_columns=None):
         self.method = method
         self.max_parents = max_parents
-        self.nodes: Dict[str, BayesianNode] = {}
+        self.nodes = {}
         self.imputer = SimpleImputer(strategy='mean')
         self.prior_edges = {}
-        self.categorical_columns = []
+        self.categorical_columns = categorical_columns or []
+
+    def set_categorical_columns(self, columns):
+        self.categorical_columns = columns
 
     def fit(self, data: pd.DataFrame, prior_edges: List[tuple] = None, progress_callback: Callable[[float], None] = None):
         preprocessed_data = preprocess_data(data)
@@ -145,3 +148,9 @@ class BayesianNetwork:
                 if node not in observed_data:
                     samples[node].append(value)
         return samples
+    
+    def explain_structure(self):
+        structure = {}
+        for node_name, node in self.nodes.items():
+            structure[node_name] = [parent.name for parent in node.parents]
+        return structure
