@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "bayesianclass"
+version = "0.1.0"
+description = "A Python package for building and analyzing Bayesian Networks using dataclasses"
+readme = "README.md"
+authors = [{ name = "Mertcan Coskun", email = "mertcan.coskun1993@gmail.com" }]
+license = { file = "LICENSE" }
+classifiers = [
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python",
+    "Programming Language :: Python :: 3",
+]
+keywords = ["bayesian", "network", "dataclass", "probability"]
+dependencies = [
+    "numpy",
+    "matplotlib",
+]
+requires-python = ">=3.7"
+
+[project.urls]
+Homepage = "https://github.com/mertcan79/bayesian_class"
+
+[project.optional-dependencies]
+dev = ["pytest"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
