@@ -13,7 +13,7 @@ from sklearn.model_selection import KFold
 from sklearn.impute import SimpleImputer
 from pgmpy.estimators import HillClimbSearch, BicScore
 from pgmpy.models import BayesianModel
-
+from pgmpy.estimators import PC
 
 
 class BayesianNetwork:
