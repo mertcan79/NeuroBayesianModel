@@ -25,7 +25,7 @@ class BayesianNetwork:
         self.graph = nx.DiGraph()
         self.scaler = StandardScaler()
         self.imputer = SimpleImputer(strategy='mean')
-
+        
     def fit(self, data: pd.DataFrame, prior_edges: List[tuple] = None, progress_callback: Callable[[float], None] = None):
         try:
             self._learn_structure(data, prior_edges)
@@ -44,10 +44,20 @@ class BayesianNetwork:
         scaled_data = pd.DataFrame(scaled_data, columns=data.columns)
 
         if self.method == 'pc':
-            pc = PC(data=scaled_data)
-            skeleton, separating_sets = pc.estimate(max_cond_vars=self.max_parents)
-            est_model = skeleton.to_directed()
-        elif self.method == 'hill_climb':
+            try:
+                pc = PC(data=scaled_data)
+                result = pc.estimate(max_cond_vars=self.max_parents)
+                if isinstance(result, tuple) and len(result) == 2:
+                    skeleton, separating_sets = result
+                    est_model = skeleton.to_directed()
+                else:
+                    logger.warning("PC algorithm did not return expected output. Falling back to Hill-Climb search.")
+                    self.method = 'hill_climb'
+            except Exception as e:
+                logger.warning(f"Error in PC algorithm: {str(e)}. Falling back to Hill-Climb search.")
+                self.method = 'hill_climb'
+
+        if self.method == 'hill_climb':
             hc = HillClimbSearch(data=scaled_data)
             est_model = hc.estimate(scoring_method=BicScore(data=scaled_data), max_indegree=self.max_parents)
         else:
