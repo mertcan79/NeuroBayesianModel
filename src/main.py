@@ -4,11 +4,15 @@ from bayesian_network import BayesianNetwork
 from sklearn.model_selection import train_test_split
 import time
 
-def generate_synthetic_data(n_samples):
-    A = np.random.normal(0, 1, n_samples)
-    B = 0.5 * A + np.random.normal(0, 0.5, n_samples)
-    C = 0.3 * A + 0.5 * B + np.random.normal(0, 0.5, n_samples)
-    return pd.DataFrame({'A': A, 'B': B, 'C': C})
+def generate_synthetic_data(n_samples=25000, n_vars=15):
+    data = pd.DataFrame()
+    data['A'] = np.random.normal(0, 1, n_samples)
+    data['B'] = 0.5 * data['A'] + np.random.normal(0, 0.5, n_samples)
+    data['C'] = 0.3 * data['A'] + 0.5 * data['B'] + np.random.normal(0, 0.5, n_samples)
+    for i in range(3, n_vars):
+        parents = np.random.choice(range(i), size=min(3, i), replace=False)
+        data[f'Var_{i}'] = sum(0.3 * data.iloc[:, p] for p in parents) + np.random.normal(0, 0.5, n_samples)
+    return data
 
 def progress_callback(progress):
     print(f"Progress: {progress*100:.0f}%")
@@ -35,12 +39,10 @@ if __name__ == "__main__":
 
     # Print learned structure
     print("\nLearned Network Structure:")
-    for node, node_data in bn.nodes.items():
-        parents = node_data.get('parents', [])
-        children = node_data.get('children', [])
-        print(f"Node {node}:")
-        print(f"  Parents: {parents}")
-        print(f"  Children: {children}")
+    for node_name, node in bn.nodes.items():
+        print(f"Node {node_name}:")
+        print(f"  Parents: {[parent.name for parent in node.parents]}")
+        print(f"  Children: {[child.name for child in node.children]}")
 
     # Perform inference on test set
     print("\nPerforming inference on test set...")
