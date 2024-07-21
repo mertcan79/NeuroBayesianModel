@@ -3,9 +3,11 @@ import numpy as np
 from sklearn.impute import SimpleImputer
 from sklearn.preprocessing import StandardScaler
 from scipy import stats
-from bayesian_network import BayesianNetwork
+from bayesian_network import BayesianNetwork, HierarchicalBayesianNetwork
 from typing import List
-import json
+import logging
+
+logging.basicConfig(level=logging.INFO)
 
 # Load data
 behavioral = pd.read_csv('/Users/macbookair/Documents/bayesian_dataclass/data/connectome_behavioral.csv')
@@ -23,43 +25,53 @@ relevant_features_hcp = [
     'FS_L_Caudate_Vol', 'FS_R_Caudate_Vol', 'FS_L_Putamen_Vol', 'FS_R_Putamen_Vol',
 ]
 
+# Include all FreeSurfer variables, especially those with "temporal" or "Temporal"
 relevant_features_hcp_temporal = [col for col in hcp.columns if 'temporal' in col.lower()]
 relevant_features_hcp = list(set(relevant_features_hcp.copy() + relevant_features_hcp_temporal))
-relevant_features_hcp
 
 hcp = hcp[relevant_features_hcp].copy()
 behavioral = behavioral[relevant_features_behavioral].copy()
 
 data = pd.merge(hcp, behavioral, on=["Subject", "Gender"])
 
-
-def preprocess_data(df: pd.DataFrame, categorical_columns: List[str]) -> pd.DataFrame:
-    df = df.copy()
-
-    # Handle 'Age' column separately
-    if 'Age' in df.columns:
-        df['Age'] = pd.Categorical(df['Age']).codes
-
-    # Convert other categorical columns to numeric codes
-    for col in categorical_columns:
-        if col != 'Age':
-            df[col] = df[col].astype('category').cat.codes
-
-    # Separate into categorical and numeric columns
-    numeric_features = [col for col in df.columns if col not in categorical_columns]
-
-    # Handle missing data for numeric features
-    numeric_imputer = SimpleImputer(strategy='median')
-    df[numeric_features] = numeric_imputer.fit_transform(df[numeric_features])
-
-    # Scale numeric features
-    scaler = StandardScaler()
-    df[numeric_features] = scaler.fit_transform(df[numeric_features])
-
-    return df
-
 # Specify categorical columns
 categorical_columns = ['Age', 'Gender']
+
+def preprocess_data(data: pd.DataFrame, categorical_columns: list) -> pd.DataFrame:
+    logging.info("Starting data preprocessing")
+    data = data.copy()
+
+    # Identify column types
+    numeric_columns = data.select_dtypes(include=[np.number]).columns.tolist()
+    
+    logging.info(f"Numeric columns: {numeric_columns}")
+    logging.info(f"Categorical columns: {categorical_columns}")
+
+    # Handle missing values
+    logging.info("Handling missing values")
+    numeric_imputer = SimpleImputer(strategy='median')
+    data[numeric_columns] = numeric_imputer.fit_transform(data[numeric_columns])
+
+    categorical_imputer = SimpleImputer(strategy='most_frequent')
+    data[categorical_columns] = categorical_imputer.fit_transform(data[categorical_columns])
+
+    # Convert 'Age' to categorical codes
+    if 'Age' in data.columns:
+        logging.info("Converting 'Age' to categorical codes")
+        data['Age'] = pd.Categorical(data['Age']).codes
+
+    # Convert categorical columns to codes
+    logging.info("Converting categorical columns to codes")
+    for col in categorical_columns:
+        data[col] = pd.Categorical(data[col]).codes
+
+    # Scale numeric features
+    logging.info("Scaling numeric features")
+    scaler = StandardScaler()
+    data[numeric_columns] = scaler.fit_transform(data[numeric_columns])
+
+    logging.info("Data preprocessing completed")
+    return data
 
 df_processed = preprocess_data(data, categorical_columns)
 
@@ -88,7 +100,6 @@ prior_edges = [
     ('CogFluidComp_Unadj', 'CardSort_Unadj'),
     ('CogCrystalComp_Unadj', 'PicVocab_Unadj'),
     ('CogCrystalComp_Unadj', 'ReadEng_Unadj'),
-    # New connections based on neuroanatomical knowledge
     ('FS_TotCort_GM_Vol', 'CogCrystalComp_Unadj'),
     ('FS_BrainStem_Vol', 'ProcSpeed_Unadj'),
     ('FS_L_Putamen_Vol', 'CardSort_Unadj'),
@@ -98,14 +109,35 @@ prior_edges = [
 ]
 
 # Add connections for temporal lobe measures
-temporal_measures = [col for col in df_processed.columns if 'temporal' in col.lower()]
+temporal_measures = [col for col in data.columns if 'temporal' in col.lower()]
 for measure in temporal_measures:
     prior_edges.append((measure, 'CogCrystalComp_Unadj'))
     prior_edges.append((measure, 'ReadEng_Unadj'))
 
-# Create and fit the model
-model = BayesianNetwork(method='hill_climb', max_parents=5)  # Increased max_parents
-model.fit(df_processed, prior_edges=prior_edges)
+# Filter prior_edges to only include edges between existing columns
+existing_columns = set(df_processed.columns)
+filtered_prior_edges = [
+    (parent, child) for parent, child in prior_edges
+    if parent in existing_columns and child in existing_columns
+]
+
+print("Filtered prior edges:")
+print(filtered_prior_edges)
+
+# Debugging: Print nodes in prior edges
+print("Nodes in prior edges:")
+all_nodes_in_edges = set([node for edge in prior_edges for node in edge])
+print(all_nodes_in_edges)
+
+# Check if 'Gender' exists in the dataframe columns
+print("Columns in df_processed:")
+print(df_processed.columns)
+
+# When creating the model
+model = BayesianNetwork(method='hill_climb', max_parents=5, categorical_columns=categorical_columns)
+
+# When fitting the model
+model.fit(df_processed, prior_edges=filtered_prior_edges)
 
 # Compute and print log-likelihood
 log_likelihood = model.log_likelihood(df_processed)
@@ -124,7 +156,8 @@ for node, value in top_sensitivities:
 
 # Print the network structure
 print("\nNetwork structure:")
-print(model.explain_structure())
+network_structure = model.explain_structure_extended()
+print(network_structure)
 
 # Perform Metropolis-Hastings sampling
 observed_data = {
@@ -139,4 +172,37 @@ for node, samples in mh_samples.items():
     if node not in observed_data:
         print(f"{node}: Mean = {np.mean(samples):.4f}, Std = {np.std(samples):.4f}")
 
+# Write results to JSON
+results = {
+    "log_likelihood": log_likelihood,
+    "cross_validation": {"mean": mean_ll, "std": std_ll},
+    "top_sensitivities": dict(top_sensitivities),
+    "network_structure": network_structure,
+    "mh_samples": {node: {"mean": float(np.mean(samples)), "std": float(np.std(samples))} 
+                   for node, samples in mh_samples.items() if node not in observed_data}
+}
+model.write_results_to_json(results)
+
 print("\nAnalysis complete.")
+
+# Example of using HierarchicalBayesianNetwork
+hierarchical_levels = ['cellular', 'regional', 'functional']
+h_model = HierarchicalBayesianNetwork(levels=hierarchical_levels, method='hill_climb', max_parents=5)
+
+# Add nodes to specific levels
+h_model.add_node('FS_L_Hippo_Vol', 'regional')
+h_model.add_node('CogFluidComp_Unadj', 'functional')
+h_model.add_node('NEOFAC_O', 'functional')
+
+# Add edges
+h_model.add_edge('FS_L_Hippo_Vol', 'CogFluidComp_Unadj')
+h_model.add_edge('FS_L_Hippo_Vol', 'NEOFAC_O')
+
+# Fit the hierarchical model
+h_model.fit(df_processed, categorical_columns=categorical_columns)
+
+# Print hierarchical structure
+print("\nHierarchical Network Structure:")
+print(h_model.explain_structure_extended())
+
+print("\nHierarchical Analysis complete.")

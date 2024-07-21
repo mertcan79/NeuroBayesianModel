@@ -10,47 +10,17 @@ logger = logging.getLogger(__name__)
 
 def fit_parameters(nodes, data):
     for node_name, node in nodes.items():
-        node_data = pd.Series(data[node_name]).apply(pd.to_numeric, errors='coerce').dropna()
-
+        node_data = data[node_name]
+        parent_data = None
+        if node.parents:
+            parent_data = data[[parent.name for parent in node.parents]]
+        
         if isinstance(node, CategoricalNode):
-            node_data = node.transform(node_data)
-            counts = np.bincount(node_data)
-            node.set_distribution(counts)
-        else:
-            # Fit the scaler and distribution
-            node.fit_scaler(node_data.values)
             scaled_node_data = node.transform(node_data.values)
-            
-            if node.parents:
-                parent_data_list = []
-                for parent in node.parents:
-                    parent_data = pd.Series(data[parent.name]).apply(pd.to_numeric, errors='coerce').dropna()
-                    parent_data_list.append(parent_data)
-                
-                parent_data_df = pd.DataFrame(parent_data_list).T
-                parent_data_df, scaled_node_data = parent_data_df.align(pd.Series(scaled_node_data), join='inner', axis=0)
-                
-                parent_data = parent_data_df.values
-                scaled_node_data = scaled_node_data.values
-                
-                if parent_data.shape[0] != scaled_node_data.shape[0]:
-                    raise ValueError("Mismatch in number of rows between parent data and node data.")
-                
-                parent_data = parent_data.astype(np.float64)
-                scaled_node_data = scaled_node_data.astype(np.float64)
-                
-                beta = np.linalg.lstsq(parent_data, scaled_node_data, rcond=None)[0]
-                residuals = scaled_node_data - parent_data.dot(beta)
-                std = np.std(residuals)
-                
-                node.params = {'loc': 0, 'scale': std, 'beta': beta}
-            else:
-                # For nodes without parents, fit a normal distribution
-                loc, scale = stats.norm.fit(scaled_node_data)
-                node.params = {'loc': loc, 'scale': scale}
-            
-            # Set a normal distribution for all continuous nodes
-            node.set_distribution(stats.norm)
+        else:
+            scaled_node_data = node_data.values
+
+        node.fit(scaled_node_data, parent_data)
 
 def preprocess_data(data: pd.DataFrame) -> pd.DataFrame:
     data = data.copy()

@@ -1,83 +1,118 @@
-from sklearn.preprocessing import StandardScaler
 import numpy as np
-from typing import List
-from scipy.stats import multinomial
 from scipy import stats
-import pandas as pd
+from sklearn.linear_model import LinearRegression
 
 class BayesianNode:
-    def __init__(self, name: str):
+    def __init__(self, name):
         self.name = name
         self.parents = []
         self.children = []
         self.distribution = None
         self.params = {}
-        self.scaler = StandardScaler()
-        self.fitted = False  # Add a flag to check if the scaler is fitted
-
-    def fit_scaler(self, data):
-        if np.issubdtype(data.dtype, np.number):
-            self.scaler.fit(data.reshape(-1, 1))
-            self.fitted = True
+        self.regression_model = None
 
     def transform(self, data):
-        if np.issubdtype(data.dtype, np.number):
-            if not self.fitted:
-                raise ValueError("Scaler is not fitted yet.")
-            return self.scaler.transform(data.reshape(-1, 1)).flatten()
+        return data  # For continuous variables, no transformation is needed
+
+    def fit(self, data, parent_data=None):
+        if parent_data is None or len(parent_data) == 0:
+            # Fit univariate normal distribution
+            mean, std = stats.norm.fit(data)
+            self.distribution = stats.norm(loc=mean, scale=std)
+            self.params = {'loc': mean, 'scale': std}
         else:
-            return data
+            # Fit multivariate linear regression
+            self.regression_model = LinearRegression()
+            self.regression_model.fit(parent_data, data)
+            residuals = data - self.regression_model.predict(parent_data)
+            _, std = stats.norm.fit(residuals)
+            self.params = {
+                'coefficients': self.regression_model.coef_,
+                'intercept': self.regression_model.intercept_,
+                'scale': std
+            }
 
-    def inverse_transform(self, data):
-        if np.issubdtype(data.dtype, np.number):
-            if not self.fitted:
-                raise ValueError("Scaler is not fitted yet.")
-            return self.scaler.inverse_transform(data.reshape(-1, 1)).flatten()
+    def log_probability(self, value, parent_values=None):
+        if self.distribution is None and self.regression_model is None:
+            raise ValueError("Distribution not fitted yet")
+        
+        if parent_values is None or len(parent_values) == 0:
+            return self.distribution.logpdf(value)
         else:
-            return data
+            predicted = self.regression_model.predict([parent_values])[0]
+            return stats.norm(loc=predicted, scale=self.params['scale']).logpdf(value)
 
-    def set_distribution(self, distribution, params=None):
-        self.distribution = distribution
-        self.params = params or {}
-
-    def sample(self, size: int = 1, parent_samples=None) -> np.ndarray:
-        if not self.parents:
-            if self.distribution is not None:
-                samples = self.distribution.rvs(size=size, **self.params)
-                return self.inverse_transform(samples)
-            else:
-                raise ValueError(f"No distribution set for node {self.name}")
+    def sample(self, size=1, parent_values=None):
+        if self.distribution is None and self.regression_model is None:
+            raise ValueError("Distribution not fitted yet")
+        
+        if parent_values is None or len(parent_values) == 0:
+            return self.distribution.rvs(size=size)
         else:
-            if parent_samples is None:
-                raise ValueError("Parent samples must be provided for nodes with parents")
-            parent_values = np.column_stack([parent_samples[parent.name] for parent in self.parents])
-            beta = self.params.get('beta', np.zeros(len(self.parents)))
-            intercept = self.params.get('intercept', 0)
-            scale = self.params.get('scale', 1.0)
-            loc = intercept + np.dot(parent_values, beta)
-            noise = np.random.normal(0, scale, size)
-            samples = loc + noise
-            return self.inverse_transform(samples)
+            predicted = self.regression_model.predict([parent_values])[0]
+            return stats.norm(loc=predicted, scale=self.params['scale']).rvs(size=size)
 
-class CategoricalNode(BayesianNode):
-    def __init__(self, name: str, categories: List[str]):
-        super().__init__(name)
+class CategoricalNode:
+    def __init__(self, name, categories):
+        self.name = name
         self.categories = categories
         self.category_map = {cat: i for i, cat in enumerate(categories)}
+        self.reverse_category_map = {i: cat for i, cat in enumerate(categories)}
+        self.distribution = None
+        self.params = {}
+        self.cpt = None
+        self.parents = []
+        self.children = []
 
     def transform(self, data):
-        return np.array([self.category_map.get(d, -1) for d in data])
-
-    def inverse_transform(self, data):
-        inv_map = {v: k for k, v in self.category_map.items()}
-        return np.array([inv_map.get(d, 'Unknown') for d in data])
-
-    def set_distribution(self, counts):
-        super().set_distribution(stats.multinomial, params={'n': 1, 'p': counts / np.sum(counts)})
-
-    def sample(self, size: int = 1, parent_samples=None) -> np.ndarray:
-        if self.distribution is not None:
-            samples = self.distribution.rvs(size=size, **self.params)
-            return self.inverse_transform(samples)
+        if np.isscalar(data):
+            return self.category_map.get(data, -1)
         else:
-            raise ValueError(f"No distribution set for node {self.name}")
+            return np.array([self.category_map.get(d, -1) for d in data])
+
+    def fit(self, data, parent_data=None):
+        if parent_data is None or len(parent_data) == 0:
+            # Fit categorical distribution
+            counts = np.bincount(data, minlength=len(self.categories))
+            self.distribution = stats.multinomial(n=1, p=counts / np.sum(counts))
+            self.params = {'p': self.distribution.p}
+            self.cpt = self.params['p']
+        else:
+            # Fit conditional probability table
+            parent_categories = [parent.categories for parent in self.parents]
+            parent_combinations = np.array(np.meshgrid(*parent_categories)).T.reshape(-1, len(self.parents))
+            
+            self.cpt = np.zeros((len(parent_combinations), len(self.categories)))
+            for i, parent_comb in enumerate(parent_combinations):
+                mask = np.all(parent_data == parent_comb, axis=1)
+                counts = np.bincount(data[mask], minlength=len(self.categories))
+                self.cpt[i] = counts / np.sum(counts)
+            
+            self.params = {'cpt': self.cpt}
+
+    def log_probability(self, value, parent_values=None):
+        if self.cpt is None:
+            raise ValueError("Distribution not fitted yet")
+        
+        value_index = self.transform(value)
+        
+        if parent_values is None or len(parent_values) == 0:
+            return np.log(self.cpt[value_index])
+        else:
+            parent_indices = [parent.transform(pv) for parent, pv in zip(self.parents, parent_values)]
+            parent_index = np.ravel_multi_index(parent_indices, [len(parent.categories) for parent in self.parents])
+            return np.log(self.cpt[parent_index, value_index])
+
+    def sample(self, size=1, parent_values=None):
+        if self.cpt is None:
+            raise ValueError("Distribution not fitted yet")
+        
+        if parent_values is None or len(parent_values) == 0:
+            probs = self.cpt
+        else:
+            parent_indices = [parent.transform(pv) for parent, pv in zip(self.parents, parent_values)]
+            parent_index = np.ravel_multi_index(parent_indices, [len(parent.categories) for parent in self.parents])
+            probs = self.cpt[parent_index]
+        
+        samples = np.random.choice(len(self.categories), size=size, p=probs)
+        return np.array([self.reverse_category_map[s] for s in samples])

@@ -1,40 +1,58 @@
 import numpy as np
 import pandas as pd
-from typing import Dict, List
+from typing import Dict, List, Tuple
 from bayesian_node import BayesianNode
 from pgmpy.estimators import HillClimbSearch, BicScore
+from bayesian_node import BayesianNode, CategoricalNode
+import numpy as np
+from pgmpy.estimators import HillClimbSearch
 
-def learn_structure(data: pd.DataFrame, method: str = 'k2', max_parents: int = 5, prior_edges: Dict[tuple, float] = None) -> Dict[str, BayesianNode]:
-    # Convert categorical columns to numeric
-    data_numeric = data.copy()
-    categorical_columns = data_numeric.select_dtypes(include=['object', 'category']).columns
-    for col in categorical_columns:
-        data_numeric[col] = pd.Categorical(data_numeric[col]).codes
-
-    if method == 'k2':
-        return k2_algorithm(data_numeric, max_parents, prior_edges)
-    elif method == 'hill_climb':
-        return hill_climb_algorithm(data_numeric, max_parents, prior_edges)
+def learn_structure(data, method='hill_climb', max_parents=5, prior_edges=None, categorical_columns=None):
+    categorical_columns = categorical_columns or []
+    data_numeric = data.drop(columns=categorical_columns)
+    
+    if method == 'hill_climb':
+        hc = HillClimbSearch(data_numeric)
+        scoring_method = BicScore(data_numeric)
+        model = hc.estimate(scoring_method=scoring_method, max_indegree=max_parents)
+        
+        # Convert the learned structure to a dictionary of nodes and their parents
+        nodes = {}
+        for column in data.columns:
+            if column in categorical_columns:
+                nodes[column] = CategoricalNode(column, categories=data[column].unique().tolist())
+            else:
+                nodes[column] = BayesianNode(column)
+        
+        for node in model.nodes():
+            for parent in model.get_parents(node):
+                if parent in nodes and node in nodes:
+                    nodes[node].parents.append(nodes[parent])
+        
+        return nodes
     else:
         raise ValueError(f"Unsupported structure learning method: {method}")
 
-
-def k2_algorithm(data: pd.DataFrame, max_parents: int, prior_edges: Dict[tuple, float] = None) -> Dict[str, BayesianNode]:
+def k2_algorithm(data: pd.DataFrame, max_parents: int, 
+                 prior_edges: Dict[Tuple[str, str], float] = None, 
+                 allowed_connections: List[Tuple[str, str]] = None) -> Dict[str, BayesianNode]:
     nodes = {node: BayesianNode(node) for node in data.columns}
     node_order = list(data.columns)
 
     for i, node in enumerate(node_order):
         parents = []
-        old_score = score_node(data, node, parents, prior_edges)
+        old_score = score_node(data, node, parents, prior_edges, allowed_connections)
         
         while len(parents) < max_parents:
             best_new_parent = None
             best_new_score = old_score
 
             for potential_parent in node_order[:i]:
-                if potential_parent not in parents:  # Check if the parent is already added
+                if potential_parent not in parents:
+                    if allowed_connections and (potential_parent, node) not in allowed_connections:
+                        continue
                     new_parents = parents + [potential_parent]
-                    new_score = score_node(data, node, new_parents, prior_edges)
+                    new_score = score_node(data, node, new_parents, prior_edges, allowed_connections)
 
                     if new_score > best_new_score:
                         best_new_parent = potential_parent
@@ -52,9 +70,20 @@ def k2_algorithm(data: pd.DataFrame, max_parents: int, prior_edges: Dict[tuple, 
 
     return nodes
 
-def hill_climb_algorithm(data: pd.DataFrame, max_parents: int, prior_edges: Dict[tuple, float] = None) -> Dict[str, BayesianNode]:
+def hill_climb_algorithm(data: pd.DataFrame, max_parents: int, 
+                         prior_edges: Dict[Tuple[str, str], float] = None, 
+                         allowed_connections: List[Tuple[str, str]] = None) -> Dict[str, BayesianNode]:
     hc = HillClimbSearch(data)
-    model = hc.estimate(scoring_method=BicScore(data), max_indegree=max_parents)
+    
+    def modified_bic_score(model):
+        score = BicScore(data).score(model)
+        if allowed_connections:
+            for edge in model.edges():
+                if edge not in allowed_connections:
+                    return -np.inf
+        return score
+    
+    model = hc.estimate(scoring_method=modified_bic_score, max_indegree=max_parents)
     
     nodes = {node: BayesianNode(node) for node in data.columns}
     
@@ -67,22 +96,27 @@ def hill_climb_algorithm(data: pd.DataFrame, max_parents: int, prior_edges: Dict
     if prior_edges:
         for (parent, child), probability in prior_edges.items():
             if probability > 0.5 and nodes[parent] not in nodes[child].parents:
-                nodes[child].parents.append(nodes[parent])
-                nodes[parent].children.append(nodes[child])
+                if allowed_connections and (parent, child) in allowed_connections:
+                    nodes[child].parents.append(nodes[parent])
+                    nodes[parent].children.append(nodes[child])
     
     return nodes
 
-
-def score_node(data: pd.DataFrame, node: str, parents: List[str], prior_edges: Dict[tuple, float] = None) -> float:
-    # Implement your scoring function here (e.g., BIC score)
-    # This is a placeholder implementation
+def score_node(data: pd.DataFrame, node: str, parents: List[str], 
+               prior_edges: Dict[Tuple[str, str], float] = None, 
+               allowed_connections: List[Tuple[str, str]] = None) -> float:
     if not parents:
         return -np.inf
     X = data[parents]
     y = data[node]
     
+    # Check if all connections are allowed
+    if allowed_connections:
+        if not all((parent, node) in allowed_connections for parent in parents):
+            return -np.inf
+    
     # Incorporate prior knowledge if available
-    prior_score = sum(prior_edges.get((parent, node), 0) for parent in parents)
+    prior_score = sum(prior_edges.get((parent, node), 0) for parent in parents) if prior_edges else 0
     
     # Compute the likelihood score (you may want to use a more sophisticated method)
     residuals = y - X.mean()
