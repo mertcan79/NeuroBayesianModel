@@ -19,7 +19,7 @@ def fit_parameters(nodes, data):
         else:
             # Fit the scaler and distribution
             node.fit_scaler(node_data.values)
-            scaled_node_data = node_data.values
+            scaled_node_data = node.transform(node_data.values)
             
             if node.parents:
                 parent_data_list = []
@@ -43,9 +43,14 @@ def fit_parameters(nodes, data):
                 residuals = scaled_node_data - parent_data.dot(beta)
                 std = np.std(residuals)
                 
-                # Set a normal distribution with parameters
-                node.set_distribution(stats.norm, params={'loc': np.mean(scaled_node_data), 'scale': std})
-
+                node.params = {'loc': 0, 'scale': std, 'beta': beta}
+            else:
+                # For nodes without parents, fit a normal distribution
+                loc, scale = stats.norm.fit(scaled_node_data)
+                node.params = {'loc': loc, 'scale': scale}
+            
+            # Set a normal distribution for all continuous nodes
+            node.set_distribution(stats.norm)
 
 def preprocess_data(data: pd.DataFrame) -> pd.DataFrame:
     data = data.copy()

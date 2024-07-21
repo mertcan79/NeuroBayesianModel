@@ -1,13 +1,11 @@
 import pandas as pd
 import numpy as np
-from pgmpy.models import BayesianNetwork
-from pgmpy.estimators import BayesianEstimator
-from pgmpy.inference import VariableElimination
 from sklearn.preprocessing import KBinsDiscretizer
 from sklearn.impute import SimpleImputer
+from bayesian_network import BayesianNetwork
 
 # Load data
-data = pd.read_csv('data/connectome_data.csv')
+data = pd.read_csv('/Users/macbookair/Documents/bayesian_dataclass/data/connectome_behavioral.csv')
 
 # Select relevant features
 relevant_features = [
@@ -39,7 +37,7 @@ for col in df.columns:
     df[col] = df[col].astype(int)
 
 # Define Bayesian Network structure
-model = BayesianNetwork([
+prior_edges = [
     ('Age', 'CogFluidComp_Unadj'),
     ('Age', 'CogCrystalComp_Unadj'),
     ('Gender', 'CogFluidComp_Unadj'),
@@ -60,32 +58,40 @@ model = BayesianNetwork([
     ('CogCrystalComp_Unadj', 'PicVocab_Unadj'),
     ('CogFluidComp_Unadj', 'ProcSpeed_Unadj'),
     ('CogFluidComp_Unadj', 'ListSort_Unadj')
-])
+]
 
-# Fit the model
-model.fit(df, estimator=BayesianEstimator, prior_type="BDeu")
+# Create and fit the model
+model = BayesianNetwork(method='hill_climb', max_parents=5)
+model.fit(df, prior_edges=prior_edges)
 
-# Create an inference object
-inference = VariableElimination(model)
+# Compute and print log-likelihood
+log_likelihood = model.log_likelihood(df)
+print(f"Log-likelihood: {log_likelihood}")
 
-# Example: Predict CogFluidComp_Unadj given some evidence
-evidence = {
+# Perform cross-validation
+mean_ll, std_ll = model.cross_validate(df, k_folds=5)
+print(f"Cross-validation: Mean LL = {mean_ll:.4f}, Std = {std_ll:.4f}")
+
+# Compute sensitivity for CogFluidComp_Unadj
+sensitivity = model.compute_sensitivity('CogFluidComp_Unadj', num_samples=1000)
+top_sensitivities = sorted(sensitivity.items(), key=lambda x: x[1], reverse=True)[:5]
+print("\nTop 5 sensitivities for CogFluidComp_Unadj:")
+for node, value in top_sensitivities:
+    print(f"Sensitivity to {node}: {value:.4f}")
+
+# Perform Metropolis-Hastings sampling
+observed_data = {
     'Age': 2,  # Corresponds to '31-35' age range
     'Gender': 1,  # Assuming '1' represents one gender category
     'MMSE_Score': 3,  # Using 3 instead of 4, as we have 5 bins (0-4)
 }
+mh_samples = model.metropolis_hastings(observed_data, num_samples=1000)
 
-prediction = inference.query(['CogFluidComp_Unadj'], evidence=evidence)
-print("Predicted distribution for CogFluidComp_Unadj:")
-print(prediction)
+print("\nMetropolis-Hastings sampling results:")
+for node, samples in mh_samples.items():
+    if node not in observed_data:
+        print(f"{node}: Mean = {np.mean(samples):.4f}, Std = {np.std(samples):.4f}")
 
-# Example: Compute probability of high cognitive function given evidence
-high_cog = inference.query(['CogFluidComp_Unadj', 'CogCrystalComp_Unadj'], 
-                           evidence={'Age': 2, 'MMSE_Score': 3})
-print("\nProbability of high cognitive function:")
-print(high_cog)
-
-# Analyze feature importance through Markov blanket
-for node in ['CogFluidComp_Unadj', 'CogCrystalComp_Unadj']:
-    print(f"\nMarkov Blanket for {node}:")
-    print(model.get_markov_blanket(node))
+# Print the network structure
+print("\nNetwork structure:")
+print(model.explain_structure())

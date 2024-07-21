@@ -23,6 +23,9 @@ class BayesianNetwork:
         self.categorical_columns = categorical_columns or []
         self.prior_edges = {}
 
+    def sample_node(self, node_name: str, size: int = 1) -> np.ndarray:
+        return sample_node(self, node_name, size)
+
     def fit(self, data: pd.DataFrame, prior_edges: List[tuple] = None, progress_callback: Callable[[float], None] = None):
         preprocessed_data = self.preprocess_data(data)
         try:
@@ -69,32 +72,6 @@ class BayesianNetwork:
 
     def log_likelihood(self, data: pd.DataFrame) -> float:
         return log_likelihood(self.nodes, data)
-
-    def sample_node(self, node_name: str, size: int = 1) -> np.ndarray:
-        node = self.nodes[node_name]
-        if not node.parents:
-            if isinstance(node, CategoricalNode):
-                return node.sample(size)
-            elif callable(node.distribution):
-                try:
-                    samples = node.distribution.rvs(size=size, **node.params)
-                except AttributeError:
-                    samples = np.array([node.distribution(**node.params) for _ in range(size)])
-                return node.inverse_transform(samples)
-            else:
-                raise ValueError(f"Unsupported distribution type for node {node_name}")
-        else:
-            parent_values = np.column_stack([self.sample_node(p.name, size) for p in node.parents])
-            if isinstance(node, CategoricalNode):
-                return node.sample(size)
-            else:
-                beta = node.params.get('beta', np.zeros(len(node.parents)))
-                intercept = node.params.get('intercept', 0)
-                scale = node.params.get('scale', 1.0)
-                loc = intercept + np.dot(parent_values, beta)
-                noise = np.random.normal(0, scale, size)
-                samples = loc + noise
-                return node.inverse_transform(samples)
 
 
     def cross_validate(self, data: pd.DataFrame, k_folds: int = 5) -> Tuple[float, float]:
@@ -157,7 +134,7 @@ class BayesianNetwork:
             for node, value in current_state.items():
                 samples[node].append(value)
         return samples
-    
+        
     def explain_structure(self) -> Dict[str, List[str]]:
         structure = {}
         for node_name, node in self.nodes.items():

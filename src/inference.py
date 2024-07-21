@@ -1,7 +1,7 @@
 import numpy as np
 import pandas as pd
 from typing import Dict
-from bayesian_node import BayesianNode
+from bayesian_node import BayesianNode, CategoricalNode
 import logging
 
 # Set up logging configuration
@@ -19,20 +19,28 @@ def log_likelihood(nodes, data):
                 logger.warning(f"No distribution set for node {node_name}")
     return log_likelihood
 
-def sample_node(nodes: Dict[str, BayesianNode], node_name: str, size: int = 1) -> np.ndarray:
-    node = nodes[node_name]
+def sample_node(self, node_name: str, size: int = 1) -> np.ndarray:
+    node = self.nodes[node_name]
     if not node.parents:
-        samples = node.distribution.rvs(size=size, **node.params)
+        if isinstance(node, CategoricalNode):
+            return node.sample(size)
+        elif node.distribution is not None:
+            samples = node.distribution.rvs(size=size, **node.params)
+            return node.inverse_transform(samples)
+        else:
+            raise ValueError(f"No distribution set for node {node_name}")
     else:
-        parent_values = np.column_stack([sample_node(nodes, p.name, size) for p in node.parents])
-        parent_values_scaled = np.column_stack([nodes[p.name].transform(parent_values[:, i]) for i, p in enumerate(node.parents)])
-        loc = np.dot(parent_values_scaled, node.params['beta'])
-        samples = node.distribution.rvs(loc=loc, scale=node.params['scale'], size=size)
-    
-    # Log summary of samples instead of detailed values
-    logger.debug(f"Sampled values for node {node_name}: Mean = {np.mean(samples):.4f}, Std = {np.std(samples):.4f}")
-    
-    return node.inverse_transform(samples.reshape(-1, 1))
+        parent_values = np.column_stack([self.sample_node(p.name, size) for p in node.parents])
+        if isinstance(node, CategoricalNode):
+            return node.sample(size)
+        else:
+            beta = node.params.get('beta', np.zeros(len(node.parents)))
+            loc = np.dot(parent_values, beta)
+            scale = node.params.get('scale', 1.0)
+            noise = np.random.normal(0, scale, size)
+            samples = loc + noise
+            return node.inverse_transform(samples)
+
 
 def infer_with_missing_data(self, data: pd.DataFrame) -> pd.DataFrame:
     results = pd.DataFrame()
