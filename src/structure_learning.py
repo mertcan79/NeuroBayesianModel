@@ -5,12 +5,19 @@ from bayesian_node import BayesianNode
 from pgmpy.estimators import HillClimbSearch, BicScore
 
 def learn_structure(data: pd.DataFrame, method: str = 'k2', max_parents: int = 5, prior_edges: Dict[tuple, float] = None) -> Dict[str, BayesianNode]:
+    # Convert categorical columns to numeric
+    data_numeric = data.copy()
+    categorical_columns = data_numeric.select_dtypes(include=['object', 'category']).columns
+    for col in categorical_columns:
+        data_numeric[col] = pd.Categorical(data_numeric[col]).codes
+
     if method == 'k2':
-        return k2_algorithm(data, max_parents, prior_edges)
+        return k2_algorithm(data_numeric, max_parents, prior_edges)
     elif method == 'hill_climb':
-        return hill_climb_algorithm(data, max_parents, prior_edges)
+        return hill_climb_algorithm(data_numeric, max_parents, prior_edges)
     else:
         raise ValueError(f"Unsupported structure learning method: {method}")
+
 
 def k2_algorithm(data: pd.DataFrame, max_parents: int, prior_edges: Dict[tuple, float] = None) -> Dict[str, BayesianNode]:
     nodes = {node: BayesianNode(node) for node in data.columns}

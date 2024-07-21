@@ -21,8 +21,6 @@ class BayesianNetwork:
         self.max_parents = max_parents
         self.nodes = {}
         self.categorical_columns = categorical_columns or []
-        self.numeric_imputer = SimpleImputer(strategy='mean')
-        self.categorical_imputer = SimpleImputer(strategy='most_frequent')
         self.prior_edges = {}
 
     def fit(self, data: pd.DataFrame, prior_edges: List[tuple] = None, progress_callback: Callable[[float], None] = None):
@@ -43,14 +41,9 @@ class BayesianNetwork:
 
     def preprocess_data(self, data: pd.DataFrame) -> pd.DataFrame:
         data = data.copy()
-        
-        numeric_columns = [col for col in data.columns if col not in self.categorical_columns]
-        
-        if numeric_columns:
-            data[numeric_columns] = self.numeric_imputer.fit_transform(data[numeric_columns])
-        
-        if self.categorical_columns:
-            data[self.categorical_columns] = self.categorical_imputer.fit_transform(data[self.categorical_columns])
+
+        for col in self.categorical_columns:
+            data[col] = data[col].astype('category').cat.codes
         
         return data
 
@@ -69,7 +62,7 @@ class BayesianNetwork:
     def _create_nodes(self, data: pd.DataFrame):
         for column in data.columns:
             if column in self.categorical_columns:
-                categories = data[column].unique().tolist()
+                categories = data[column].astype('category').cat.categories.tolist()
                 self.nodes[column] = CategoricalNode(column, categories)
             else:
                 self.nodes[column] = BayesianNode(column)
@@ -102,7 +95,6 @@ class BayesianNetwork:
                 noise = np.random.normal(0, scale, size)
                 samples = loc + noise
                 return node.inverse_transform(samples)
-
 
     def cross_validate(self, data: pd.DataFrame, k_folds: int = 5) -> Tuple[float, float]:
         kf = KFold(n_splits=k_folds, shuffle=True, random_state=42)
@@ -161,13 +153,23 @@ class BayesianNetwork:
             if np.log(np.random.random()) < proposed_likelihood - current_likelihood:
                 current_state = proposed_state
             for node, value in current_state.items():
-                if node not in observed_data:
-                    samples[node].append(value)
+                samples[node].append(value)
         return samples
     
-    def explain_structure(self):
+    def explain_structure(self) -> Dict[str, List[str]]:
         structure = {}
         for node_name, node in self.nodes.items():
             structure[node_name] = [parent.name for parent in node.parents]
         return structure
     
+    def set_distribution(self, distribution, params=None):
+        self.distribution = distribution
+        self.params = params or {}
+        # Validate probabilities if using categorical distributions
+        if isinstance(self, CategoricalNode):
+            probs = self.params.get('p')
+            if probs is not None:
+                if not np.all((0 <= probs) & (probs <= 1)):
+                    raise ValueError("Probabilities must be between 0 and 1.")
+                if not np.isclose(np.sum(probs), 1):
+                    raise ValueError("Probabilities must sum to 1.")
