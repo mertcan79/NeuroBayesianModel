@@ -109,14 +109,11 @@ class BayesianNetwork:
     def compute_sensitivity(self, target_node: str, num_samples: int = 10000) -> Dict[str, float]:
         sensitivity = {}
         base_samples = self.sample_node(target_node, size=num_samples)
-        logger.info(f"Base samples for {target_node}: {base_samples[:5]}")  # Log first 5 samples
         
         for node_name, node in self.nodes.items():
             if node_name != target_node:
                 perturbed_network = copy.deepcopy(self)
                 perturbed_samples = perturbed_network.sample_node(node_name, size=num_samples)
-                
-                logger.info(f"Perturbed samples for {node_name}: {perturbed_samples[:5]}")  # Log first 5 samples
                 
                 if isinstance(node, CategoricalNode):
                     unique, counts = np.unique(perturbed_samples, return_counts=True)
@@ -132,14 +129,18 @@ class BayesianNetwork:
                 
                 perturbed_output = perturbed_network.sample_node(target_node, size=num_samples)
                 
-                logger.info(f"Perturbed output for {target_node}: {perturbed_output[:5]}")  # Log first 5 samples
-                
                 if isinstance(self.nodes[target_node], CategoricalNode):
                     sensitivity[node_name] = np.mean(perturbed_output != base_samples)
                 else:
                     sensitivity[node_name] = np.mean(np.abs(perturbed_output - base_samples))
         
+        # Normalize sensitivity scores to [0, 1] range
+        max_sensitivity = max(sensitivity.values())
+        if max_sensitivity > 0:
+            sensitivity = {k: v / max_sensitivity for k, v in sensitivity.items()}
+        
         return sensitivity
+
 
     def metropolis_hastings(self, observed_data: Dict[str, Any], num_samples: int = 1000) -> Dict[str, List[Any]]:
         current_state = {node: self.sample_node(node, size=1)[0] for node in self.nodes}
