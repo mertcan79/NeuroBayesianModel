@@ -40,6 +40,25 @@ class BayesianNode:
         self.distribution = distribution
         self.params = params or {}
 
+    def sample(self, size: int = 1, parent_samples=None) -> np.ndarray:
+        if not self.parents:
+            if self.distribution is not None:
+                samples = self.distribution.rvs(size=size, **self.params)
+                return self.inverse_transform(samples)
+            else:
+                raise ValueError(f"No distribution set for node {self.name}")
+        else:
+            if parent_samples is None:
+                raise ValueError("Parent samples must be provided for nodes with parents")
+            parent_values = np.column_stack([parent_samples[parent.name] for parent in self.parents])
+            beta = self.params.get('beta', np.zeros(len(self.parents)))
+            intercept = self.params.get('intercept', 0)
+            scale = self.params.get('scale', 1.0)
+            loc = intercept + np.dot(parent_values, beta)
+            noise = np.random.normal(0, scale, size)
+            samples = loc + noise
+            return self.inverse_transform(samples)
+
 class CategoricalNode(BayesianNode):
     def __init__(self, name: str, categories: List[str]):
         super().__init__(name)
@@ -56,5 +75,9 @@ class CategoricalNode(BayesianNode):
     def set_distribution(self, counts):
         super().set_distribution(stats.multinomial, params={'n': 1, 'p': counts / np.sum(counts)})
 
-    def sample(self, size=1):
-        return self.inverse_transform(self.distribution.rvs(size=size, **self.params))
+    def sample(self, size: int = 1, parent_samples=None) -> np.ndarray:
+        if self.distribution is not None:
+            samples = self.distribution.rvs(size=size, **self.params)
+            return self.inverse_transform(samples)
+        else:
+            raise ValueError(f"No distribution set for node {self.name}")

@@ -6,7 +6,7 @@ import logging
 from sklearn.model_selection import KFold
 from scipy import stats
 import copy
-
+from collections import deque
 from bayesian_node import BayesianNode, CategoricalNode
 from structure_learning import learn_structure
 from parameter_fitting import fit_parameters
@@ -24,7 +24,13 @@ class BayesianNetwork:
         self.prior_edges = {}
 
     def sample_node(self, node_name: str, size: int = 1) -> np.ndarray:
-        return sample_node(self, node_name, size)
+        sorted_nodes = self.topological_sort()
+        samples = {}
+        for node in sorted_nodes:
+            if node == node_name:
+                break
+            samples[node] = self.nodes[node].sample(size, samples)
+        return self.nodes[node_name].sample(size, samples)
 
     def fit(self, data: pd.DataFrame, prior_edges: List[tuple] = None, progress_callback: Callable[[float], None] = None):
         preprocessed_data = self.preprocess_data(data)
@@ -152,3 +158,19 @@ class BayesianNetwork:
                     raise ValueError("Probabilities must be between 0 and 1.")
                 if not np.isclose(np.sum(probs), 1):
                     raise ValueError("Probabilities must sum to 1.")
+
+    def topological_sort(self):
+        visited = set()
+        stack = deque()
+
+        def visit(node):
+            if node.name not in visited:
+                visited.add(node.name)
+                for child in node.children:
+                    visit(child)
+                stack.appendleft(node.name)
+
+        for node in self.nodes.values():
+            visit(node)
+
+        return list(stack)
