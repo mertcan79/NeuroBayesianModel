@@ -3,6 +3,7 @@ import numpy as np
 from typing import List
 from scipy.stats import multinomial
 from scipy import stats
+import pandas as pd
 
 class BayesianNode:
     def __init__(self, name: str):
@@ -12,22 +13,25 @@ class BayesianNode:
         self.distribution = None
         self.params = {}
         self.scaler = StandardScaler()
+        self.fitted = False  # Add a flag to check if the scaler is fitted
 
     def fit_scaler(self, data):
         if np.issubdtype(data.dtype, np.number):
             self.scaler.fit(data.reshape(-1, 1))
-        else:
-            # For non-numeric data, don't use a scaler
-            pass
+            self.fitted = True
 
     def transform(self, data):
         if np.issubdtype(data.dtype, np.number):
+            if not self.fitted:
+                raise ValueError("Scaler is not fitted yet.")
             return self.scaler.transform(data.reshape(-1, 1)).flatten()
         else:
             return data
 
     def inverse_transform(self, data):
         if np.issubdtype(data.dtype, np.number):
+            if not self.fitted:
+                raise ValueError("Scaler is not fitted yet.")
             return self.scaler.inverse_transform(data.reshape(-1, 1)).flatten()
         else:
             return data
@@ -41,10 +45,6 @@ class CategoricalNode(BayesianNode):
         super().__init__(name)
         self.categories = categories
         self.category_map = {cat: i for i, cat in enumerate(categories)}
-
-    def fit_scaler(self, data):
-        # No scaling for categorical data
-        pass
 
     def transform(self, data):
         return np.array([self.category_map.get(d, -1) for d in data])

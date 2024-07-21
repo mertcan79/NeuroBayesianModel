@@ -33,7 +33,12 @@ if __name__ == "__main__":
 
         print("Evaluating model...")
         test_ll = bn.log_likelihood(test_data)
-        print(f"Test log-likelihood: {test_ll:.4f}")
+
+        # Check if test_ll is a numpy array
+        if isinstance(test_ll, np.ndarray):
+            print(f"Test log-likelihood: {test_ll.mean():.4f}")
+        else:
+            print(f"Test log-likelihood: {test_ll:.4f}")
 
         print("Performing cross-validation...")
         mean_ll, std_ll = bn.cross_validate(data, k_folds=5)

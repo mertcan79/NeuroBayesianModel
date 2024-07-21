@@ -8,21 +8,16 @@ import logging
 logger = logging.getLogger()
 logger.setLevel(logging.WARNING)  # Set to WARNING to suppress DEBUG and INFO logs
 
-def log_likelihood(nodes: Dict[str, BayesianNode], data: pd.DataFrame) -> float:
+def log_likelihood(nodes, data):
     log_likelihood = 0.0
     for _, row in data.iterrows():
         for node_name, node in nodes.items():
             scaled_value = node.transform(row[node_name])
-            if not node.parents:
+            if node.distribution is not None:
                 log_likelihood += node.distribution.logpdf(scaled_value, **node.params)
             else:
-                parent_values = np.array([nodes[p.name].transform(row[p.name]) for p in node.parents])
-                if parent_values.ndim == 1:
-                    parent_values = parent_values.reshape(-1, 1)
-                loc = np.dot(parent_values.T, node.params['beta'])
-                scale = node.params['scale']
-                log_likelihood += node.distribution.logpdf(scaled_value, loc=loc, scale=scale)
-    return float(log_likelihood)
+                logger.warning(f"No distribution set for node {node_name}")
+    return log_likelihood
 
 def sample_node(nodes: Dict[str, BayesianNode], node_name: str, size: int = 1) -> np.ndarray:
     node = nodes[node_name]
