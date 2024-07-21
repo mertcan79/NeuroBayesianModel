@@ -39,10 +39,12 @@ venv.bak/ssh-key-2024-07-20.key
 venv.bak/ssh-key-2024-07-20.key.pub
 
 # Folders
-archive/
-logs/
-visuals/
+/archive
+/logs
+/visuals
 
 # Keys
 ssh-key-2024-07-20.key
 ssh-key-2024-07-20.key.pub
+
+/src/main2.ipynb
