@@ -22,6 +22,10 @@ relevant_features_hcp = [
     'FS_L_Caudate_Vol', 'FS_R_Caudate_Vol', 'FS_L_Putamen_Vol', 'FS_R_Putamen_Vol',
 ]
 
+relevant_features_hcp_temporal = [col for col in hcp.columns if 'temporal' in col.lower()]
+relevant_features_hcp = list(set(relevant_features_hcp.copy() + relevant_features_hcp_temporal))
+relevant_features_hcp
+
 hcp = hcp[relevant_features_hcp].copy()
 behavioral = behavioral[relevant_features_behavioral].copy()
 
@@ -58,7 +62,7 @@ categorical_columns = ['Age', 'Gender']
 
 df_processed = preprocess_data(data, categorical_columns)
 
-# Define Bayesian Network structure
+# Define Bayesian Network structure with more specific connections
 prior_edges = [
     ('Age', 'CogFluidComp_Unadj'),
     ('Age', 'CogCrystalComp_Unadj'),
@@ -83,10 +87,23 @@ prior_edges = [
     ('CogFluidComp_Unadj', 'CardSort_Unadj'),
     ('CogCrystalComp_Unadj', 'PicVocab_Unadj'),
     ('CogCrystalComp_Unadj', 'ReadEng_Unadj'),
+    # New connections based on neuroanatomical knowledge
+    ('FS_TotCort_GM_Vol', 'CogCrystalComp_Unadj'),
+    ('FS_BrainStem_Vol', 'ProcSpeed_Unadj'),
+    ('FS_L_Putamen_Vol', 'CardSort_Unadj'),
+    ('FS_R_Putamen_Vol', 'CardSort_Unadj'),
+    ('FS_L_Hippo_Vol', 'NEOFAC_O'),
+    ('FS_R_Hippo_Vol', 'NEOFAC_O'),
 ]
 
+# Add connections for temporal lobe measures
+temporal_measures = [col for col in df_processed.columns if 'temporal' in col.lower()]
+for measure in temporal_measures:
+    prior_edges.append((measure, 'CogCrystalComp_Unadj'))
+    prior_edges.append((measure, 'ReadEng_Unadj'))
+
 # Create and fit the model
-model = BayesianNetwork(method='hill_climb', max_parents=3)
+model = BayesianNetwork(method='hill_climb', max_parents=5)  # Increased max_parents
 model.fit(df_processed, prior_edges=prior_edges)
 
 # Compute and print log-likelihood
