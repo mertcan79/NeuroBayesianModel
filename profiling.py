@@ -1,6 +1,7 @@
 import cProfile
 import pstats
 import io
+import json
 from src.main import main
 
 def profile_main():
