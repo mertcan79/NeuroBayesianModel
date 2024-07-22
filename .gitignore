@@ -44,3 +44,5 @@ visuals/
 creds/
 
 /src/main.ipynb
+
+/dump.rdb
