@@ -24,13 +24,13 @@ app.conf.update(
 def fit_bayesian_network(data_dict, prior_edges, categorical_columns):
     data = pd.DataFrame(data_dict)
     
-    # Use pgmpy's HillClimbSearch with K2Score
+    # Use pgmpy's HillClimbSearch with BicScore
     hc = HillClimbSearch(data)
-    k2_score = K2Score(data)
+    bic_score = BicScore(data)
     
     # Define the best model
     best_model = hc.estimate(
-        scoring_method=k2_score,
+        scoring_method=bic_score,
         max_indegree=4
     )
     
@@ -47,11 +47,10 @@ def fit_bayesian_network(data_dict, prior_edges, categorical_columns):
     for node in pgmpy_model.nodes():
         cpd = pgmpy_model.get_cpds(node)
         if cpd.variable in model.nodes:
-            model.nodes[cpd.variable].params = cpd.values.tolist()
+            model.nodes[cpd.variable].params = cpd.values
             model.nodes[cpd.variable].parents = [model.nodes[var] for var in cpd.variables[1:]]
     
     return model.to_dict()
-
 @app.task
 def compute_sensitivity(model_dict, target_node, num_samples):
     model = BayesianNetwork.from_dict(model_dict)

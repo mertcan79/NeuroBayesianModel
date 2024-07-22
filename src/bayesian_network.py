@@ -116,7 +116,7 @@ class BayesianNetwork:
                     self.nodes[col].categories = sorted(data[col].unique())
 
             logger.info("Learning structure")
-            self._learn_structure(data, prior_edges)
+            self._learn_structure(data)  # Remove prior_edges from here
             if progress_callback:
                 progress_callback(0.5)
             
@@ -147,15 +147,9 @@ class BayesianNetwork:
     def preprocess_data(self, data: pd.DataFrame) -> pd.DataFrame:
         return data.apply(lambda col: pd.Categorical(col).codes if col.name in self.categorical_columns else col)
 
-    def _learn_structure(self, data: pd.DataFrame, prior_edges: List[tuple] = None):
+    def _learn_structure(self, data: pd.DataFrame):
         self.nodes = learn_structure(data, method=self.method, max_parents=self.max_parents, 
-                                    prior_edges=self.prior_edges, categorical_columns=self.categorical_columns)
-        if prior_edges:
-            for edge in prior_edges:
-                if edge[0] in self.nodes and edge[1] in self.nodes:
-                    if self.nodes[edge[0]] not in self.nodes[edge[1]].parents:
-                        self.nodes[edge[1]].parents.append(self.nodes[edge[0]])
-                        self.nodes[edge[0]].children.append(self.nodes[edge[1]])
+                                    categorical_columns=self.categorical_columns)
 
     def _create_nodes(self, data: pd.DataFrame):
         for column in data.columns:

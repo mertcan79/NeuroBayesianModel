@@ -1,54 +1,44 @@
 import numpy as np
 import pandas as pd
 from typing import Dict, List, Tuple
-from pgmpy.estimators import HillClimbSearch, BicScore
+from pgmpy.estimators import HillClimbSearch, BicScore, K2Score
 from bayesian_node import BayesianNode, CategoricalNode
 
-def learn_structure(data: pd.DataFrame, method="hill_climb", max_parents=5, prior_edges=None, categorical_columns=None, existing_nodes=None) -> Dict[str, BayesianNode]:
-    categorical_columns = categorical_columns or []
-    existing_nodes = existing_nodes or {}
-    prior_edges = prior_edges or []
-    
-    # Create a copy of the data with categorical columns encoded
-    data_encoded = data.copy()
-    
-    if method == "hill_climb":
-        hc = HillClimbSearch(data_encoded)
-        
-        # Create a custom scoring function that incorporates prior edges
-        def custom_score(model):
-            base_score = BicScore(data_encoded).score(model)
-            edge_bonus = sum(1 for edge in prior_edges if model.has_edge(*edge))
-            return base_score + edge_bonus * 10  # Adjust the bonus multiplier as needed
+def learn_structure(data: pd.DataFrame, method: str = 'hill_climb', max_parents: int = 3, 
+                    prior_edges: List[tuple] = None, categorical_columns: List[str] = None) -> Dict[str, BayesianNode]:
+    if method != 'hill_climb':
+        raise ValueError(f"Unsupported method: {method}. Only 'hill_climb' is currently supported.")
 
-        # Estimate the structure using the custom scoring function
-        model = hc.estimate(scoring_method=custom_score, max_indegree=max_parents)
+    hc = HillClimbSearch(data)
+    k2_score = K2Score(data)
 
-        nodes = existing_nodes.copy()
-        for column in data.columns:
-            if column not in nodes:
-                if column in categorical_columns:
-                    categories = sorted(data[column].unique())
-                    nodes[column] = CategoricalNode(column, categories)
-                else:
-                    nodes[column] = BayesianNode(column)
-
-        # Add edges based on the learned structure
-        for node in model.nodes():
-            for parent in model.get_parents(node):
-                if parent in nodes and node in nodes:
-                    nodes[node].parents.append(nodes[parent])
-                    nodes[parent].children.append(nodes[node])
-
-        # Add prior edges that are not already in the structure
-        for parent, child in prior_edges:
-            if parent in nodes and child in nodes and nodes[parent] not in nodes[child].parents:
-                nodes[child].parents.append(nodes[parent])
-                nodes[parent].children.append(nodes[child])
-
-        return nodes
+    # Incorporate prior edges if provided
+    if prior_edges:
+        # Create a blacklist of edges that are not in prior_edges
+        blacklist = [(child, parent) for parent, child in prior_edges]
+        for node1 in data.columns:
+            for node2 in data.columns:
+                if node1 != node2 and (node1, node2) not in prior_edges and (node2, node1) not in prior_edges:
+                    blacklist.append((node1, node2))
+                    blacklist.append((node2, node1))
     else:
-        raise ValueError(f"Unsupported structure learning method: {method}")
+        blacklist = None
+
+    model = hc.estimate(scoring_method=k2_score, max_indegree=max_parents, black_list=blacklist)
+
+    nodes = {}
+    for node in model.nodes():
+        if categorical_columns and node in categorical_columns:
+            nodes[node] = CategoricalNode(node, list(data[node].unique()))
+        else:
+            nodes[node] = BayesianNode(node)
+
+    for edge in model.edges():
+        parent, child = edge
+        nodes[child].parents.append(nodes[parent])
+        nodes[parent].children.append(nodes[child])
+
+    return nodes
 
 def k2_algorithm(
     data: pd.DataFrame,
