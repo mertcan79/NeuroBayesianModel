@@ -2,15 +2,54 @@ from celery import Celery
 import pandas as pd
 import numpy as np
 from bayesian_network import BayesianNetwork, HierarchicalBayesianNetwork
+from pgmpy.estimators import HillClimbSearch, BayesianEstimator, BicScore
+from pgmpy.models import BayesianNetwork as PgmpyBN
+from pgmpy.estimators import HillClimbSearch, BayesianEstimator
+from pgmpy.models import BayesianNetwork as PgmpyBN
+from pgmpy.estimators import K2Score
 
+app = Celery('tasks',
+             broker='redis://localhost:6379/0',
+             backend='redis://localhost:6379/1')
 
-app = Celery('tasks', broker='redis://localhost:6379/0')
+app.conf.update(
+    task_serializer='pickle',
+    accept_content=['pickle', 'json'],
+    result_serializer='pickle',
+    timezone='UTC',
+    enable_utc=True,
+)
 
 @app.task
 def fit_bayesian_network(data_dict, prior_edges, categorical_columns):
     data = pd.DataFrame(data_dict)
+    
+    # Use pgmpy's HillClimbSearch with K2Score
+    hc = HillClimbSearch(data)
+    k2_score = K2Score(data)
+    
+    # Define the best model
+    best_model = hc.estimate(
+        scoring_method=k2_score,
+        max_indegree=4
+    )
+    
+    # Convert pgmpy model to our BayesianNetwork format
     model = BayesianNetwork(method='hill_climb', max_parents=4, categorical_columns=categorical_columns)
-    model.fit(data, prior_edges=prior_edges)
+    for edge in best_model.edges():
+        model.add_edge(*edge)
+    
+    # Fit parameters using pgmpy
+    pgmpy_model = PgmpyBN(best_model.edges())
+    pgmpy_model.fit(data, estimator=BayesianEstimator, prior_type='BDeu')
+    
+    # Transfer parameters from pgmpy model to our model
+    for node in pgmpy_model.nodes():
+        cpd = pgmpy_model.get_cpds(node)
+        if cpd.variable in model.nodes:
+            model.nodes[cpd.variable].params = cpd.values.tolist()
+            model.nodes[cpd.variable].parents = [model.nodes[var] for var in cpd.variables[1:]]
+    
     return model.to_dict()
 
 @app.task

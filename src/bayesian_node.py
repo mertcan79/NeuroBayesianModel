@@ -18,19 +18,24 @@ class BayesianNode:
             'children': [child.name for child in self.children],
             'distribution': str(self.distribution) if self.distribution else None,
             'params': self.params,
-            'regression_model': self.regression_model.get_params() if self.regression_model else None
         }
 
     @classmethod
     def from_dict(cls, data):
         node = cls(data['name'])
         node.params = data['params']
-        if data['regression_model']:
-            node.regression_model = LinearRegression()
-            node.regression_model.set_params(**data['regression_model'])
         if data['distribution']:
             node.distribution = getattr(stats, data['distribution'].split('.')[-1])
         return node
+
+    def set_parameters(self, values, parent_variables):
+        if isinstance(self, CategoricalNode):
+            self.cpt = values
+        else:
+            # Assume continuous node
+            self.distribution = stats.norm(loc=np.mean(values), scale=np.std(values))
+        self.params = {'values': values, 'parent_variables': parent_variables}
+
 
     def fit(self, data, parent_data=None):
         if parent_data is None or len(parent_data) == 0:

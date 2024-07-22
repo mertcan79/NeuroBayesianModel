@@ -37,7 +37,7 @@ class BayesianNetwork:
             'max_parents': self.max_parents,
             'categorical_columns': self.categorical_columns
         }
-        
+    
     @classmethod
     def from_dict(cls, data):
         bn = cls(method=data['method'], max_parents=data['max_parents'], categorical_columns=data['categorical_columns'])
@@ -134,6 +134,9 @@ class BayesianNetwork:
             logger.error(f"Unexpected error during fitting: {str(e)}")
             raise
 
+    def set_parameters(self, node_name, values, parent_variables):
+        self.nodes[node_name].set_parameters(values, parent_variables)
+
     def _fit_parameters(self, data: pd.DataFrame):
         for node_name, node in self.nodes.items():
             parent_names = [parent.name for parent in node.parents]
@@ -161,6 +164,12 @@ class BayesianNetwork:
                 self.nodes[column] = CategoricalNode(column, categories)
             else:
                 self.nodes[column] = BayesianNode(column)
+
+    def add_edge(self, parent, child):
+        if parent not in self.nodes or child not in self.nodes:
+            raise ValueError("Both nodes must exist in the network")
+        self.nodes[child].parents.append(self.nodes[parent])
+        self.nodes[parent].children.append(self.nodes[child])
 
     @lru_cache(maxsize=128)
     def _cached_node_log_likelihood(self, node_name, value, parent_values):
