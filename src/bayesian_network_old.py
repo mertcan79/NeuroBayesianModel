@@ -1,6 +1,7 @@
 import pandas as pd
 import numpy as np
 from typing import Dict, Any, Tuple, Callable, List
+from sklearn.impute import SimpleImputer
 import logging
 from sklearn.model_selection import KFold
 from scipy import stats
@@ -9,74 +10,60 @@ from collections import deque
 from bayesian_node import BayesianNode, CategoricalNode
 from structure_learning import learn_structure
 from parameter_fitting import fit_parameters
+from inference import log_likelihood, sample_node
+from sklearn.model_selection import GridSearchCV
+from sklearn.model_selection import StratifiedKFold
 import networkx as nx
 import json
 import os
 from datetime import datetime
-from functools import lru_cache
-from joblib import Parallel, delayed
+from bayesian_node import BayesianNode, CategoricalNode
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 class BayesianNetwork:
-    def __init__(self, method='hill_climb', max_parents=3, categorical_columns=None):
+    def __init__(self, method='k2', max_parents=5, categorical_columns=None):
         self.method = method
         self.max_parents = max_parents
         self.nodes = {}
         self.categorical_columns = categorical_columns or []
         self.prior_edges = {}
-        
-        for col in self.categorical_columns:
-            self.nodes[col] = CategoricalNode(col, [])  # Empty categories for now
 
-    @lru_cache(maxsize=None)
     def sample_node(self, node_name: str, size: int = 1) -> np.ndarray:
         sorted_nodes = self.topological_sort()
-        samples = {node: None for node in sorted_nodes}
-        
+        samples = {}
         for node in sorted_nodes:
             if node == node_name:
                 break
-            parent_values = {parent: samples[parent] for parent in self.nodes[node].parents}
-            samples[node] = self.nodes[node].sample(size, parent_values)
-            
-        return samples[node_name]
+            samples[node] = self.nodes[node].sample(size, samples)
+        return self.nodes[node_name].sample(size, samples)
 
     def fit(self, data: pd.DataFrame, prior_edges: List[tuple] = None, progress_callback: Callable[[float], None] = None):
         try:
-            for col in self.categorical_columns:
-                if col in self.nodes:
-                    self.nodes[col].categories = sorted(data[col].unique())
-
             logger.info("Learning structure")
             self._learn_structure(data, prior_edges)
             if progress_callback:
                 progress_callback(0.5)
-            
             logger.info("Fitting parameters")
-            self._fit_parameters(data)
+            fit_parameters(self.nodes, data)
             if progress_callback:
                 progress_callback(1.0)
-        except ValueError as ve:
-            logger.error(f"ValueError during fitting: {str(ve)}")
-            raise
-        except KeyError as ke:
-            logger.error(f"KeyError during fitting: {str(ke)}")
-            raise
         except Exception as e:
-            logger.error(f"Unexpected error during fitting: {str(e)}")
+            logger.error(f"Error during fitting: {str(e)}")
             raise
-
-    def _fit_parameters(self, data: pd.DataFrame):
-        for node_name, node in self.nodes.items():
-            parent_names = [parent.name for parent in node.parents]
-            node_data = data[node_name]
-            parent_data = data[parent_names] if parent_names else None
-            node.fit(node_data, parent_data)
 
     def preprocess_data(self, data: pd.DataFrame) -> pd.DataFrame:
-        return data.apply(lambda col: pd.Categorical(col).codes if col.name in self.categorical_columns else col)
+        data = data.copy()
+
+        # Convert categorical columns
+        for col in self.categorical_columns:
+            data[col] = pd.Categorical(data[col]).codes
+
+        # Separate numeric and categorical columns
+        numeric_columns = data.select_dtypes(include=[np.number]).columns
+        
+        return data
 
     def _learn_structure(self, data: pd.DataFrame, prior_edges: List[tuple] = None):
         self.nodes = learn_structure(data, method=self.method, max_parents=self.max_parents, 
@@ -96,84 +83,66 @@ class BayesianNetwork:
             else:
                 self.nodes[column] = BayesianNode(column)
 
-    @lru_cache(maxsize=None)
-    def _cached_node_log_likelihood(self, node_name, value, parent_values):
-        node = self.nodes[node_name]
-        return node.log_probability(value, parent_values)
-
     def log_likelihood(self, data: pd.DataFrame) -> float:
-        log_probs = np.zeros(len(data))
-        for node_name, node in self.nodes.items():
-            parent_names = [parent.name for parent in node.parents]
-            if parent_names:
-                parent_values = data[parent_names].values
-                log_probs += np.array([node.log_probability(val, tuple(pv)) for val, pv in zip(data[node_name], parent_values)])
-            else:
-                log_probs += np.array([node.log_probability(val) for val in data[node_name]])
-        return np.sum(log_probs)
+        return log_likelihood(self.nodes, data)
 
     def cross_validate(self, data: pd.DataFrame, k_folds: int = 5) -> Tuple[float, float]:
         kf = KFold(n_splits=k_folds, shuffle=True, random_state=42)
-        log_likelihoods = Parallel(n_jobs=-1)(
-            delayed(self._evaluate_fold)(train_index, test_index, data) for train_index, test_index in kf.split(data)
-        )
+        log_likelihoods = []
+        
+        for train_index, test_index in kf.split(data):
+            train_data, test_data = data.iloc[train_index], data.iloc[test_index]
+            fold_bn = BayesianNetwork(method=self.method, max_parents=self.max_parents, categorical_columns=self.categorical_columns)
+            fold_bn.fit(train_data)
+            log_likelihoods.append(fold_bn.log_likelihood(test_data))
+        
         return float(np.mean(log_likelihoods)), float(np.std(log_likelihoods))
-
-    def _evaluate_fold(self, train_index, test_index, data):
-        train_data, test_data = data.iloc[train_index], data.iloc[test_index]
-        fold_bn = BayesianNetwork(method=self.method, max_parents=self.max_parents, categorical_columns=self.categorical_columns)
-        fold_bn.fit(train_data)
-        return fold_bn.log_likelihood(test_data)
 
     def compute_sensitivity(self, target_node: str, num_samples: int = 10000) -> Dict[str, float]:
         sensitivity = {}
-        try:
-            base_samples = self.sample_node(target_node, size=num_samples)
-            
-            for node_name, node in self.nodes.items():
-                if node_name != target_node:
-                    try:
-                        perturbed_network = copy.deepcopy(self)
-                        perturbed_samples = perturbed_network.sample_node(node_name, size=num_samples)
-                        
-                        if isinstance(node, CategoricalNode):
-                            unique, counts = np.unique(perturbed_samples, return_counts=True)
-                            prob_dict = dict(zip(unique, counts / len(perturbed_samples)))
-                            probabilities = [prob_dict.get(cat, 0) for cat in node.categories]
-                            perturbed_network.nodes[node_name].set_distribution(probabilities)
-                        else:
-                            perturbed_samples_transformed = node.transform(perturbed_samples)
-                            mean = np.mean(perturbed_samples_transformed)
-                            std = np.std(perturbed_samples_transformed)
-                            perturbed_network.nodes[node_name].params = {'loc': mean, 'scale': std}
-                            perturbed_network.nodes[node_name].distribution = stats.norm
-                        
-                        perturbed_output = perturbed_network.sample_node(target_node, size=num_samples)
-                        
-                        if isinstance(self.nodes[target_node], CategoricalNode):
-                            sensitivity[node_name] = np.mean(perturbed_output != base_samples)
-                        else:
-                            sensitivity[node_name] = np.mean(np.abs(perturbed_output - base_samples))
-
-                        for param, value in node.params.items():
-                            perturbed_network = copy.deepcopy(self)
-                            perturbed_param = value * 1.1  # 10% increase
-                            perturbed_network.nodes[node_name].params[param] = perturbed_param
-                            perturbed_output = perturbed_network.sample_node(target_node, size=num_samples)
-                            
-                            if isinstance(self.nodes[target_node], CategoricalNode):
-                                sensitivity[f"{node_name}_{param}"] = np.mean(perturbed_output != base_samples)
-                            else:
-                                sensitivity[f"{node_name}_{param}"] = np.mean(np.abs(perturbed_output - base_samples))
-                    except Exception as e:
-                        print(f"Error computing sensitivity for node {node_name}: {str(e)}")
-            
-            max_sensitivity = max(sensitivity.values())
-            if max_sensitivity > 0:
-                sensitivity = {k: v / max_sensitivity for k, v in sensitivity.items()}
+        base_samples = self.sample_node(target_node, size=num_samples)
         
-        except Exception as e:
-            print(f"Error in compute_sensitivity: {str(e)}")
+        for node_name, node in self.nodes.items():
+            if node_name != target_node:
+                # Node value sensitivity
+                perturbed_network = copy.deepcopy(self)
+                perturbed_samples = perturbed_network.sample_node(node_name, size=num_samples)
+                
+                if isinstance(node, CategoricalNode):
+                    unique, counts = np.unique(perturbed_samples, return_counts=True)
+                    prob_dict = dict(zip(unique, counts / len(perturbed_samples)))
+                    probabilities = [prob_dict.get(cat, 0) for cat in node.categories]
+                    perturbed_network.nodes[node_name].set_distribution(probabilities)
+                else:
+                    perturbed_samples_transformed = node.transform(perturbed_samples)
+                    mean = np.mean(perturbed_samples_transformed)
+                    std = np.std(perturbed_samples_transformed)
+                    perturbed_network.nodes[node_name].params = {'loc': mean, 'scale': std}
+                    perturbed_network.nodes[node_name].distribution = stats.norm
+                
+                perturbed_output = perturbed_network.sample_node(target_node, size=num_samples)
+                
+                if isinstance(self.nodes[target_node], CategoricalNode):
+                    sensitivity[node_name] = np.mean(perturbed_output != base_samples)
+                else:
+                    sensitivity[node_name] = np.mean(np.abs(perturbed_output - base_samples))
+
+                # Parameter sensitivity
+                for param, value in node.params.items():
+                    perturbed_network = copy.deepcopy(self)
+                    perturbed_param = value * 1.1  # 10% increase
+                    perturbed_network.nodes[node_name].params[param] = perturbed_param
+                    perturbed_output = perturbed_network.sample_node(target_node, size=num_samples)
+                    
+                    if isinstance(self.nodes[target_node], CategoricalNode):
+                        sensitivity[f"{node_name}_{param}"] = np.mean(perturbed_output != base_samples)
+                    else:
+                        sensitivity[f"{node_name}_{param}"] = np.mean(np.abs(perturbed_output - base_samples))
+        
+        # Normalize sensitivity scores
+        max_sensitivity = max(sensitivity.values())
+        if max_sensitivity > 0:
+            sensitivity = {k: v / max_sensitivity for k, v in sensitivity.items()}
         
         return sensitivity
 
@@ -191,6 +160,24 @@ class BayesianNetwork:
             for node, value in current_state.items():
                 samples[node].append(value)
         return samples
+        
+    def explain_structure(self) -> Dict[str, List[str]]:
+        structure = {}
+        for node_name, node in self.nodes.items():
+            structure[node_name] = [parent.name for parent in node.parents]
+        return structure
+    
+    def set_distribution(self, distribution, params=None):
+        self.distribution = distribution
+        self.params = params or {}
+        # Validate probabilities if using categorical distributions
+        if isinstance(self, CategoricalNode):
+            probs = self.params.get('p')
+            if probs is not None:
+                if not np.all((0 <= probs) & (probs <= 1)):
+                    raise ValueError("Probabilities must be between 0 and 1.")
+                if not np.isclose(np.sum(probs), 1):
+                    raise ValueError("Probabilities must sum to 1.")
 
     def topological_sort(self):
         visited = set()
@@ -207,7 +194,30 @@ class BayesianNetwork:
             visit(node)
 
         return list(stack)
+    
+    def tune_hyperparameters(self, data: pd.DataFrame, param_grid: Dict[str, List[Any]]):
+        def score_model(max_parents):
+            self.max_parents = max_parents
+            self.fit(data)
+            return self.log_likelihood(data)
 
+        grid_search = GridSearchCV(estimator=self, param_grid=param_grid, scoring=score_model, cv=5)
+        grid_search.fit(data)
+        self.max_parents = grid_search.best_params_['max_parents']
+        
+    def compare_structures(self, data: pd.DataFrame, structures: List[Dict[str, List[str]]]):
+        results = []
+        for structure in structures:
+            bn = BayesianNetwork(method='custom', max_parents=self.max_parents)
+            bn.nodes = {node: BayesianNode(node) for node in structure.keys()}
+            for node, parents in structure.items():
+                bn.nodes[node].parents = [bn.nodes[p] for p in parents]
+            bn.fit(data)
+            ll = bn.log_likelihood(data)
+            bic = -2 * ll + np.log(len(data)) * sum(len(parents) for parents in structure.values())
+            results.append({'structure': structure, 'log_likelihood': ll, 'BIC': bic})
+        return sorted(results, key=lambda x: x['BIC'])
+    
     def explain_structure_extended(self) -> Dict[str, Any]:
         G = nx.DiGraph()
         for node_name, node in self.nodes.items():
@@ -263,7 +273,7 @@ class BayesianNetwork:
             json.dump(results, f, indent=2)
 
         print(f"Results written to {file_path}")
-        
+            
 class HierarchicalBayesianNetwork(BayesianNetwork):
     def __init__(self, levels: List[str], *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -287,17 +297,7 @@ class HierarchicalBayesianNetwork(BayesianNetwork):
         for level in self.levels:
             level_data = preprocessed_data[self.level_nodes[level]]
             allowed_parents = self.level_nodes[level]
-            if level_constraints and level in level_constraints:
-                allowed_parents += level_constraints[level]
+            if level_constraints:
+                allowed_parents += level_constraints.get(level, [])
             self._learn_structure(level_data, allowed_parents=allowed_parents)
         fit_parameters(self.nodes, preprocessed_data)
-
-    def _learn_structure(self, data: pd.DataFrame, allowed_parents: List[str]):
-        self.nodes = learn_structure(data, method=self.method, max_parents=self.max_parents, 
-                                    prior_edges=self.prior_edges, categorical_columns=self.categorical_columns)
-        for node in self.nodes.values():
-            node.parents = [parent for parent in node.parents if parent.name in allowed_parents]
-
-        # Enforce the structure according to the allowed_parents
-        for node_name, node in self.nodes.items():
-            node.parents = [self.nodes[parent_name] for parent_name in allowed_parents if parent_name in self.nodes and parent_name in node.parents]

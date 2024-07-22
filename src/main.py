@@ -25,6 +25,12 @@ relevant_features_hcp = [
     'FS_L_Caudate_Vol', 'FS_R_Caudate_Vol', 'FS_L_Putamen_Vol', 'FS_R_Putamen_Vol',
 ]
 
+levels = ["low", "mid", "high"]
+level_constraints = {
+        "mid": ["low"],
+        "high": ["low", "mid"]
+    }
+
 # Include all FreeSurfer variables, especially those with "temporal" or "Temporal"
 relevant_features_hcp_temporal = [col for col in hcp.columns if 'temporal' in col.lower()]
 relevant_features_hcp = list(set(relevant_features_hcp.copy() + relevant_features_hcp_temporal))
@@ -35,42 +41,29 @@ behavioral = behavioral[relevant_features_behavioral].copy()
 data = pd.merge(hcp, behavioral, on=["Subject", "Gender"])
 
 # Specify categorical columns
-categorical_columns = ['Age', 'Gender']
+categorical_columns = ['Gender', 'Age', 'MMSE_Score']
 
-def preprocess_data(data: pd.DataFrame, categorical_columns: list) -> pd.DataFrame:
-    logging.info("Starting data preprocessing")
+def preprocess_data(data: pd.DataFrame, categorical_columns: List[str]) -> pd.DataFrame:
     data = data.copy()
-
-    # Identify column types
-    numeric_columns = data.select_dtypes(include=[np.number]).columns.tolist()
     
-    logging.info(f"Numeric columns: {numeric_columns}")
-    logging.info(f"Categorical columns: {categorical_columns}")
-
     # Handle missing values
-    logging.info("Handling missing values")
+    numeric_columns = data.select_dtypes(include=[np.number]).columns
+    categorical_columns = data.select_dtypes(include=['object']).columns.tolist() + ['MMSE_Score']
+    
     numeric_imputer = SimpleImputer(strategy='median')
     data[numeric_columns] = numeric_imputer.fit_transform(data[numeric_columns])
-
+    
     categorical_imputer = SimpleImputer(strategy='most_frequent')
     data[categorical_columns] = categorical_imputer.fit_transform(data[categorical_columns])
-
-    # Convert 'Age' to categorical codes
-    if 'Age' in data.columns:
-        logging.info("Converting 'Age' to categorical codes")
-        data['Age'] = pd.Categorical(data['Age']).codes
-
-    # Convert categorical columns to codes
-    logging.info("Converting categorical columns to codes")
+    
+    # Encode categorical variables
     for col in categorical_columns:
         data[col] = pd.Categorical(data[col]).codes
-
+    
     # Scale numeric features
-    logging.info("Scaling numeric features")
     scaler = StandardScaler()
     data[numeric_columns] = scaler.fit_transform(data[numeric_columns])
-
-    logging.info("Data preprocessing completed")
+    
     return data
 
 df_processed = preprocess_data(data, categorical_columns)
@@ -187,7 +180,7 @@ print("\nAnalysis complete.")
 
 # Example of using HierarchicalBayesianNetwork
 hierarchical_levels = ['cellular', 'regional', 'functional']
-h_model = HierarchicalBayesianNetwork(levels=hierarchical_levels, method='hill_climb', max_parents=5)
+h_model = HierarchicalBayesianNetwork(levels=hierarchical_levels, method='hill_climb', max_parents=3)
 
 # Add nodes to specific levels
 h_model.add_node('FS_L_Hippo_Vol', 'regional')
@@ -199,10 +192,9 @@ h_model.add_edge('FS_L_Hippo_Vol', 'CogFluidComp_Unadj')
 h_model.add_edge('FS_L_Hippo_Vol', 'NEOFAC_O')
 
 # Fit the hierarchical model
-h_model.fit(df_processed, categorical_columns=categorical_columns)
+h_model.fit(df_processed, level_constraints=level_constraints)
 
 # Print hierarchical structure
 print("\nHierarchical Network Structure:")
 print(h_model.explain_structure_extended())
-
 print("\nHierarchical Analysis complete.")
