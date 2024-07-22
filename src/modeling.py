@@ -1,51 +1,50 @@
-from bayesian_network import BayesianNetwork
 import pandas as pd
-from typing import List, Tuple, Dict, Any
 import numpy as np
+from sklearn.model_selection import train_test_split
+from bayesian_network import BayesianNetwork
 import logging
-from joblib import Parallel, delayed
+from typing import List, Callable, Tuple, Dict, Any
 
 logger = logging.getLogger(__name__)
 
-def create_bayesian_network(data: pd.DataFrame, categorical_columns: List[str], prior_edges: List[Tuple[str, str]]) -> BayesianNetwork:
-    model = BayesianNetwork(method='hill_climb', max_parents=3, categorical_columns=categorical_columns)
-    model.fit(data, prior_edges=prior_edges)
-    return model
+class BayesianModel:
+    def __init__(self, method='hill_climb', max_parents=3, iterations=100, categorical_columns=None):
+        self.network = BayesianNetwork(method=method, max_parents=max_parents, iterations=iterations, categorical_columns=categorical_columns)
 
-def analyze_network(model: BayesianNetwork, data: pd.DataFrame) -> Dict[str, Any]:
-    results = {}
+    def preprocess_data(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Preprocess data for the Bayesian network."""
+        return self.network.preprocess_data(data)
 
-    logger.info("Computing log-likelihood")
-    results['log_likelihood'] = model.log_likelihood(data)
+    def fit(self, data: pd.DataFrame, prior_edges: List[tuple] = None, progress_callback: Callable[[float], None] = None):
+        """Fit the Bayesian network to the data."""
+        try:
+            preprocessed_data = self.preprocess_data(data)
+            self.network.fit(preprocessed_data, prior_edges=prior_edges, progress_callback=progress_callback)
+        except Exception as e:
+            logger.error(f"Error during model fitting: {e}")
+            raise
 
-    logger.info("Performing cross-validation")
-    mean_ll, std_ll = model.cross_validate(data, k_folds=3)  # Reduced from 4 to 3
-    results['cross_validation'] = {'mean': mean_ll, 'std': std_ll}
+    def evaluate(self, data: pd.DataFrame, k_folds: int = 5) -> Tuple[float, float]:
+        """Evaluate the Bayesian network using cross-validation."""
+        preprocessed_data = self.preprocess_data(data)
+        return self.network.cross_validate(preprocessed_data, k_folds=k_folds)
 
-    logger.info("Computing sensitivity")
-    sensitivity = model.compute_sensitivity('CogFluidComp_Unadj', num_samples=300)  # Reduced from 600 to 300
-    results['sensitivity'] = dict(sorted(sensitivity.items(), key=lambda x: x[1], reverse=True)[:5])  # Top 5 instead of 10
+    def simulate_intervention(self, interventions: Dict[str, Any], size: int = 1000) -> pd.DataFrame:
+        """Simulate interventions on the Bayesian network."""
+        return self.network.simulate_intervention(interventions, size=size)
 
-    logger.info("Explaining network structure")
-    results['network_structure'] = model.explain_structure_extended()
+    def save(self, filename: str):
+        """Save the Bayesian network to a file."""
+        self.network.save(filename)
 
-    logger.info("Performing Metropolis-Hastings sampling")
-    observed_data = {'Age': 0, 'Gender': 1, 'MMSE_Score': 0}
-    mh_samples = model.metropolis_hastings(observed_data, num_samples=500)  # Reduced from 1000 to 500
-    results['mh_samples'] = {node: {"mean": float(np.mean(samples)), "std": float(np.std(samples))} 
-                             for node, samples in mh_samples.items() if node not in observed_data}
+    @classmethod
+    def load(cls, filename: str):
+        """Load the Bayesian network from a file."""
+        network = BayesianNetwork.load(filename)
+        model = cls(method=network.method, max_parents=network.max_parents, iterations=network.iterations, categorical_columns=network.categorical_columns)
+        model.network = network
+        return model
 
-    return results
-
-def create_hierarchical_bayesian_network(data: pd.DataFrame, categorical_columns: List[str], hierarchical_levels: List[str], level_constraints: Dict[str, List[str]]) -> BayesianNetwork:
-    from bayesian_network import HierarchicalBayesianNetwork
-    h_model = HierarchicalBayesianNetwork(levels=hierarchical_levels, method='hill_climb', max_parents=2, categorical_columns=categorical_columns)
-    h_model.fit(data, level_constraints=level_constraints)
-    return h_model
-
-# Add parallel processing for sensitivity analysis
-def parallel_sensitivity(model, target_node, num_samples):
-    return Parallel(n_jobs=-1)(delayed(model.compute_sensitivity)(target_node, num_samples) for _ in range(5))
-
-# Use this function in the analyze_network function
-# sensitivity = np.mean(parallel_sensitivity(model, 'CogFluidComp_Unadj', 300), axis=0)
+    def compute_sensitivity(self, target_node: str, num_samples: int = 10000) -> Dict[str, float]:
+        """Compute sensitivity of the target node to changes in other nodes."""
+        return self.network.compute_sensitivity(target_node, num_samples=num_samples)

@@ -20,9 +20,10 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 class BayesianNetwork:
-    def __init__(self, method='hill_climb', max_parents=3, categorical_columns=None):
+    def __init__(self, method='hill_climb', max_parents=3, iterations=100, categorical_columns=None):
         self.method = method
         self.max_parents = max_parents
+        self.iterations = iterations
         self.nodes = {}
         self.categorical_columns = categorical_columns or []
         self.prior_edges = {}
@@ -221,143 +222,81 @@ class BayesianNetwork:
                             perturbed_samples_transformed = node.transform(perturbed_samples)
                             mean = np.mean(perturbed_samples_transformed)
                             std = np.std(perturbed_samples_transformed)
-                            perturbed_network.nodes[node_name].params = {'loc': mean, 'scale': std}
-                            perturbed_network.nodes[node_name].distribution = stats.norm
-                        
-                        perturbed_output = perturbed_network.sample_node(target_node, size=num_samples)
-                        
-                        if isinstance(self.nodes[target_node], CategoricalNode):
-                            sensitivity[node_name] = np.mean(perturbed_output != base_samples)
-                        else:
-                            sensitivity[node_name] = np.mean(np.abs(perturbed_output - base_samples))
+                            perturbed_network.nodes[node_name].set_distribution((mean, std))
 
-                        for param, value in node.params.items():
-                            perturbed_network = copy.deepcopy(self)
-                            perturbed_param = value * 1.1  # 10% increase
-                            perturbed_network.nodes[node_name].params[param] = perturbed_param
-                            perturbed_output = perturbed_network.sample_node(target_node, size=num_samples)
-                            
-                            if isinstance(self.nodes[target_node], CategoricalNode):
-                                sensitivity[f"{node_name}_{param}"] = np.mean(perturbed_output != base_samples)
-                            else:
-                                sensitivity[f"{node_name}_{param}"] = np.mean(np.abs(perturbed_output - base_samples))
+                        perturbed_samples = perturbed_network.sample_node(target_node, size=num_samples)
+                        sensitivity[node_name] = np.mean(np.abs(base_samples - perturbed_samples))
                     except Exception as e:
-                        print(f"Error computing sensitivity for node {node_name}: {str(e)}")
-            
-            max_sensitivity = max(sensitivity.values())
-            if max_sensitivity > 0:
-                sensitivity = {k: v / max_sensitivity for k, v in sensitivity.items()}
-        
+                        logger.warning(f"Could not compute sensitivity for node {node_name}: {e}")
         except Exception as e:
-            print(f"Error in compute_sensitivity: {str(e)}")
-        
+            logger.error(f"Error in compute_sensitivity: {e}")
         return sensitivity
 
-    def metropolis_hastings(self, observed_data: Dict[str, Any], num_samples: int = 1000) -> Dict[str, List[Any]]:
-        current_state = {node: self.sample_node(node, size=1)[0] for node in self.nodes}
-        samples = {node: [] for node in self.nodes}
-        for _ in range(num_samples):
-            proposed_state = current_state.copy()
-            node_to_change = np.random.choice(list(self.nodes.keys()))
-            proposed_state[node_to_change] = self.sample_node(node_to_change, size=1)[0]
-            current_likelihood = self.log_likelihood(pd.DataFrame([current_state]))
-            proposed_likelihood = self.log_likelihood(pd.DataFrame([proposed_state]))
-            if np.log(np.random.random()) < proposed_likelihood - current_likelihood:
-                current_state = proposed_state
-            for node, value in current_state.items():
-                samples[node].append(value)
-        return samples
+    def simulate_intervention(self, interventions: Dict[str, Any], size: int = 1000) -> pd.DataFrame:
+        samples = {}
+        sorted_nodes = self.topological_sort()
+        
+        for node in sorted_nodes:
+            if node in interventions:
+                samples[node] = np.repeat(interventions[node], size)
+            else:
+                parent_values = {parent: samples[parent] for parent in self.nodes[node].parents}
+                samples[node] = self.nodes[node].sample(size, parent_values)
+        
+        return pd.DataFrame(samples)
 
-    def topological_sort(self):
-        visited = set()
-        stack = deque()
-
-        def visit(node):
-            if node.name not in visited:
-                visited.add(node.name)
-                for child in node.children:
-                    visit(child)
-                stack.appendleft(node.name)
-
-        for node in self.nodes.values():
-            visit(node)
-
-        return list(stack)
-
-    def explain_structure_extended(self) -> Dict[str, Any]:
-        G = nx.DiGraph()
+    def topological_sort(self) -> List[str]:
+        graph = nx.DiGraph()
         for node_name, node in self.nodes.items():
-            G.add_node(node_name)
+            graph.add_node(node_name)
             for parent in node.parents:
-                G.add_edge(parent.name, node_name)
-
-        pos = nx.spring_layout(G)
+                graph.add_edge(parent.name, node_name)
         
-        structure = {
-            "nodes": [
-                {
-                    "id": node,
-                    "label": node,
-                    "x": pos[node][0],
-                    "y": pos[node][1],
-                    "attributes": {
-                        "distribution": str(self.nodes[node].distribution),
-                        "params": self.nodes[node].params
-                    }
-                } for node in G.nodes()
-            ],
-            "edges": [
-                {
-                    "source": u,
-                    "target": v,
-                    "weight": self.nodes[v].params.get('beta', [1])[self.nodes[v].parents.index(self.nodes[u])]
-                            if u in [p.name for p in self.nodes[v].parents] else 1
-                } for u, v in G.edges()
-            ],
-            "global_stats": {
-                "num_nodes": len(G.nodes()),
-                "num_edges": len(G.edges()),
-                "avg_degree": sum(dict(G.degree()).values()) / len(G),
-                "clustering_coefficient": nx.average_clustering(G),
-                "avg_path_length": nx.average_shortest_path_length(G) if nx.is_connected(G) else None
-            }
+        return list(nx.topological_sort(graph))
+
+    def explain_structure(self):
+        return {
+            "nodes": list(self.nodes.keys()),
+            "edges": self.get_edges()
         }
-        return structure
-        
-class HierarchicalBayesianNetwork(BayesianNetwork):
-    def __init__(self, levels: List[str], *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.levels = levels
-        self.level_nodes = {level: [] for level in levels}
 
-    def add_node(self, node: str, level: str):
-        if level not in self.levels:
-            raise ValueError(f"Invalid level: {level}")
-        self.nodes[node] = BayesianNode(node)
-        self.level_nodes[level].append(node)
+    def explain_structure_extended(self):
+        structure = {
+            "nodes": list(self.nodes.keys()),
+            "edges": self.get_edges()
+        }
 
-    def add_edge(self, parent: str, child: str):
-        if parent not in self.nodes or child not in self.nodes:
-            raise ValueError("Both nodes must exist in the network")
-        self.nodes[child].parents.append(self.nodes[parent])
-        self.nodes[parent].children.append(self.nodes[child])
-
-    def fit(self, data: pd.DataFrame, level_constraints: Dict[str, List[str]] = None):
-        preprocessed_data = self.preprocess_data(data)
-        for level in self.levels:
-            level_data = preprocessed_data[self.level_nodes[level]]
-            allowed_parents = self.level_nodes[level]
-            if level_constraints and level in level_constraints:
-                allowed_parents += level_constraints[level]
-            self._learn_structure(level_data, allowed_parents=allowed_parents)
-        fit_parameters(self.nodes, preprocessed_data)
-
-    def _learn_structure(self, data: pd.DataFrame, allowed_parents: List[str]):
-        self.nodes = learn_structure(data, method=self.method, max_parents=self.max_parents, 
-                                    prior_edges=self.prior_edges, categorical_columns=self.categorical_columns)
-        for node in self.nodes.values():
-            node.parents = [parent for parent in node.parents if parent.name in allowed_parents]
-
-        # Enforce the structure according to the allowed_parents
         for node_name, node in self.nodes.items():
-            node.parents = [self.nodes[parent_name] for parent_name in allowed_parents if parent_name in self.nodes and parent_name in node.parents]
+            if node.parents:
+                structure[node_name] = {
+                    "parents": [parent.name for parent in node.parents],
+                    "parameters": node.parameters
+                }
+            else:
+                structure[node_name] = {
+                    "parents": [],
+                    "parameters": node.parameters
+                }
+
+        return structure
+
+    def fit_transform(self, data: pd.DataFrame, prior_edges: List[tuple] = None, progress_callback: Callable[[float], None] = None):
+        self.fit(data, prior_edges=prior_edges, progress_callback=progress_callback)
+        return self.transform(data)
+
+    def transform(self, data: pd.DataFrame) -> pd.DataFrame:
+        transformed_data = data.copy()
+        for col in self.categorical_columns:
+            if col in transformed_data:
+                transformed_data[col] = transformed_data[col].astype('category').cat.codes
+        return transformed_data
+
+    def save(self, filename):
+        with open(filename, 'w') as f:
+            json.dump(self.to_dict(), f, indent=2)
+
+    @classmethod
+    def load(cls, filename):
+        with open(filename, 'r') as f:
+            data = json.load(f)
+        return cls.from_dict(data)
