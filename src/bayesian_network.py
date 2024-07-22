@@ -37,7 +37,7 @@ class BayesianNetwork:
             'max_parents': self.max_parents,
             'categorical_columns': self.categorical_columns
         }
-    
+        
     @classmethod
     def from_dict(cls, data):
         bn = cls(method=data['method'], max_parents=data['max_parents'], categorical_columns=data['categorical_columns'])
@@ -95,6 +95,13 @@ class BayesianNetwork:
             json.dump(serializable_results, f, indent=2)
 
         print(f"Results written to {file_path}")
+        
+    def get_edges(self):
+        edges = []
+        for node_name, node in self.nodes.items():
+            for parent in node.parents:
+                edges.append((parent.name, node_name))
+        return edges   
         
     @lru_cache(maxsize=128)
     def sample_node(self, node_name: str, size: int = 1) -> np.ndarray:
