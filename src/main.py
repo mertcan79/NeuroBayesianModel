@@ -77,6 +77,3 @@ def main():
     logger.info(h_model.explain_structure_extended())
 
     logger.info("Analysis complete.")
-
-if __name__ == "__main__":
-    main()
