@@ -18,11 +18,11 @@ def analyze_network(model: BayesianNetwork, data: pd.DataFrame) -> Dict[str, Any
     results['log_likelihood'] = model.log_likelihood(data)
 
     logger.info("Performing cross-validation")
-    mean_ll, std_ll = model.cross_validate(data, k_folds=5)
+    mean_ll, std_ll = model.cross_validate(data, k_folds=4)
     results['cross_validation'] = {'mean': mean_ll, 'std': std_ll}
 
     logger.info("Computing sensitivity")
-    sensitivity = model.compute_sensitivity('CogFluidComp_Unadj', num_samples=1000)
+    sensitivity = model.compute_sensitivity('CogFluidComp_Unadj', num_samples=600)
     results['sensitivity'] = dict(sorted(sensitivity.items(), key=lambda x: x[1], reverse=True)[:10])
 
     logger.info("Explaining network structure")
