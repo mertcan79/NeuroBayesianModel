@@ -13,7 +13,7 @@ def main():
     # Prepare data
     data, categorical_columns = prepare_data()
 
-    # Select a subset of columns to reduce complexity
+    # Select a subset of columns to balance complexity and performance
     selected_columns = [
         'Age', 'Gender', 'MMSE_Score', 'CogFluidComp_Unadj', 'CogCrystalComp_Unadj',
         'NEOFAC_O', 'FS_Total_GM_Vol', 'FS_Tot_WM_Vol', 'ProcSpeed_Unadj'
@@ -21,7 +21,7 @@ def main():
     data = data[selected_columns]
     categorical_columns = [col for col in categorical_columns if col in selected_columns]
 
-    # Define a simpler Bayesian Network structure
+    # Define a more comprehensive Bayesian Network structure
     prior_edges: List[Tuple[str, str]] = [
         ('Age', 'CogFluidComp_Unadj'),
         ('Age', 'CogCrystalComp_Unadj'),
@@ -32,17 +32,13 @@ def main():
         ('FS_Tot_WM_Vol', 'CogFluidComp_Unadj'),
         ('NEOFAC_O', 'CogCrystalComp_Unadj'),
         ('CogFluidComp_Unadj', 'ProcSpeed_Unadj'),
-    ]
-
-    # Filter prior_edges to only include edges between existing columns
-    filtered_prior_edges = [
-        (parent, child) for parent, child in prior_edges
-        if parent in selected_columns and child in selected_columns
+        ('Age', 'FS_Total_GM_Vol'),
+        ('Age', 'FS_Tot_WM_Vol'),
     ]
 
     # Create and analyze Bayesian Network
     logger.info("Creating Bayesian Network")
-    model = create_bayesian_network(data, categorical_columns, filtered_prior_edges)
+    model = create_bayesian_network(data, categorical_columns, prior_edges)
 
     logger.info("Analyzing Bayesian Network")
     results = analyze_network(model, data)

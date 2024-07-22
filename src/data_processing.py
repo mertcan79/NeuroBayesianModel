@@ -5,8 +5,8 @@ from sklearn.preprocessing import StandardScaler
 from typing import List, Tuple
 
 def load_data() -> Tuple[pd.DataFrame, pd.DataFrame]:
-    behavioral = pd.read_csv('/Users/macbookair/Documents/bayesian_dataclass/data/connectome_behavioral.csv')
-    hcp = pd.read_csv('/Users/macbookair/Documents/bayesian_dataclass/data/hcp_freesurfer.csv')
+    behavioral = pd.read_csv('/Users/macbookair/Documents/neurobayesianmodel/data/connectome_behavioral.csv')
+    hcp = pd.read_csv('/Users/macbookair/Documents/neurobayesianmodel/data/hcp_freesurfer.csv')
     return behavioral, hcp
 
 def select_features(behavioral: pd.DataFrame, hcp: pd.DataFrame) -> Tuple[pd.DataFrame, pd.DataFrame]:

@@ -8,6 +8,7 @@ from pgmpy.estimators import HillClimbSearch, BayesianEstimator
 from pgmpy.models import BayesianNetwork as PgmpyBN
 from pgmpy.estimators import K2Score
 
+
 app = Celery('NeuroBayesianModel',
              broker='redis://localhost:6379/0',
              backend='redis://localhost:6379/1')
