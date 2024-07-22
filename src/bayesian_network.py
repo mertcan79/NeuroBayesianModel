@@ -6,9 +6,9 @@ from sklearn.model_selection import KFold
 from scipy import stats
 import copy
 from collections import deque
-from .bayesian_node import BayesianNode, CategoricalNode
-from .structure_learning import learn_structure
-from .parameter_fitting import fit_parameters
+from bayesian_node import BayesianNode, CategoricalNode
+from structure_learning import learn_structure
+from parameter_fitting import fit_parameters
 import networkx as nx
 import json
 import os
