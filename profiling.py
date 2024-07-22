@@ -2,7 +2,7 @@ import cProfile
 import pstats
 import io
 import json
-from src.main import main
+from main import main
 
 def profile_main():
     pr = cProfile.Profile()

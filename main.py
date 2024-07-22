@@ -1,7 +1,7 @@
 import logging
-from data_processing import prepare_data
-from modeling import create_bayesian_network, analyze_network, create_hierarchical_bayesian_network
-from bayesian_network import BayesianNetwork
+from src.data_processing import prepare_data
+from src.modeling import create_bayesian_network, analyze_network, create_hierarchical_bayesian_network
+from src.bayesian_network import BayesianNetwork
 from typing import List, Tuple
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
