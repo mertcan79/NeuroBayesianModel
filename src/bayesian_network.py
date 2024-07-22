@@ -30,7 +30,73 @@ class BayesianNetwork:
         for col in self.categorical_columns:
             self.nodes[col] = CategoricalNode(col, [])  # Empty categories for now
 
-    @lru_cache(maxsize=None)
+    def to_dict(self):
+        return {
+            'nodes': {name: node.to_dict() for name, node in self.nodes.items()},
+            'method': self.method,
+            'max_parents': self.max_parents,
+            'categorical_columns': self.categorical_columns
+        }
+        
+    @classmethod
+    def from_dict(cls, data):
+        bn = cls(method=data['method'], max_parents=data['max_parents'], categorical_columns=data['categorical_columns'])
+        bn.nodes = {}
+        for name, node_data in data['nodes'].items():
+            if name in bn.categorical_columns:
+                bn.nodes[name] = CategoricalNode.from_dict(node_data)
+            else:
+                bn.nodes[name] = BayesianNode.from_dict(node_data)
+        
+        # Reconstruct parent-child relationships
+        for name, node in bn.nodes.items():
+            node.parents = [bn.nodes[parent_name] for parent_name in node_data['parents']]
+            node.children = [bn.nodes[child_name] for child_name in node_data['children']]
+        
+        return bn
+
+    def write_results_to_json(self, results: Dict[str, Any], filename: str = None):
+        if filename is None:
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            filename = f"results_{timestamp}.json"
+
+        log_folder = "logs"
+        if not os.path.exists(log_folder):
+            os.makedirs(log_folder)
+
+        file_path = os.path.join(log_folder, filename)
+
+        # Ensure all values are JSON serializable
+        def make_serializable(obj):
+            if isinstance(obj, np.ndarray):
+                return obj.tolist()
+            elif isinstance(obj, np.integer):
+                return int(obj)
+            elif isinstance(obj, np.floating):
+                return float(obj)
+            elif isinstance(obj, dict):
+                return {k: make_serializable(v) for k, v in obj.items()}
+            elif isinstance(obj, list):
+                return [make_serializable(v) for v in obj]
+            else:
+                return obj
+
+        # Include results from explain_structure_extended
+        network_structure = self.explain_structure_extended()
+        results["network_structure"] = network_structure
+
+        # Include results from HierarchicalBayesianNetwork if available
+        if isinstance(self, HierarchicalBayesianNetwork):
+            results["hierarchical_structure"] = self.explain_hierarchical_structure()
+
+        serializable_results = make_serializable(results)
+
+        with open(file_path, 'w') as f:
+            json.dump(serializable_results, f, indent=2)
+
+        print(f"Results written to {file_path}")
+        
+    @lru_cache(maxsize=128)
     def sample_node(self, node_name: str, size: int = 1) -> np.ndarray:
         sorted_nodes = self.topological_sort()
         samples = {node: None for node in sorted_nodes}
@@ -96,7 +162,7 @@ class BayesianNetwork:
             else:
                 self.nodes[column] = BayesianNode(column)
 
-    @lru_cache(maxsize=None)
+    @lru_cache(maxsize=128)
     def _cached_node_log_likelihood(self, node_name, value, parent_values):
         node = self.nodes[node_name]
         return node.log_probability(value, parent_values)
@@ -247,22 +313,6 @@ class BayesianNetwork:
             }
         }
         return structure
-    
-    def write_results_to_json(self, results: Dict[str, Any], filename: str = None):
-        if filename is None:
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            filename = f"results_{timestamp}.json"
-
-        log_folder = "logs"
-        if not os.path.exists(log_folder):
-            os.makedirs(log_folder)
-
-        file_path = os.path.join(log_folder, filename)
-
-        with open(file_path, 'w') as f:
-            json.dump(results, f, indent=2)
-
-        print(f"Results written to {file_path}")
         
 class HierarchicalBayesianNetwork(BayesianNetwork):
     def __init__(self, levels: List[str], *args, **kwargs):

@@ -4,14 +4,14 @@ from typing import Dict, List, Tuple
 from pgmpy.estimators import HillClimbSearch, BicScore
 from bayesian_node import BayesianNode, CategoricalNode
 
-def learn_structure(data, method="hill_climb", max_parents=5, prior_edges=None, categorical_columns=None, existing_nodes=None):
+def learn_structure(data: pd.DataFrame, method="hill_climb", max_parents=5, prior_edges=None, categorical_columns=None, existing_nodes=None) -> Dict[str, BayesianNode]:
     categorical_columns = categorical_columns or []
     existing_nodes = existing_nodes or {}
     prior_edges = prior_edges or []
     
     # Create a copy of the data with categorical columns encoded
     data_encoded = data.copy()
-
+    
     if method == "hill_climb":
         hc = HillClimbSearch(data_encoded)
         
@@ -49,17 +49,6 @@ def learn_structure(data, method="hill_climb", max_parents=5, prior_edges=None, 
         return nodes
     else:
         raise ValueError(f"Unsupported structure learning method: {method}")
-
-def _learn_structure(self, data: pd.DataFrame, prior_edges: List[tuple] = None):
-    self.nodes = learn_structure(data, method=self.method, max_parents=self.max_parents, 
-                                 prior_edges=self.prior_edges, categorical_columns=self.categorical_columns,
-                                 existing_nodes=self.nodes)
-    if prior_edges:
-        for edge in prior_edges:
-            if edge[0] in self.nodes and edge[1] in self.nodes:
-                if self.nodes[edge[0]] not in self.nodes[edge[1]].parents:
-                    self.nodes[edge[1]].parents.append(self.nodes[edge[0]])
-                    self.nodes[edge[0]].children.append(self.nodes[edge[1]])
 
 def k2_algorithm(
     data: pd.DataFrame,
@@ -140,7 +129,6 @@ def hill_climb_algorithm(
                     nodes[parent].children.append(nodes[child])
 
     return nodes
-
 
 def score_node(
     data: pd.DataFrame,

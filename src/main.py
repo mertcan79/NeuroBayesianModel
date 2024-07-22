@@ -2,10 +2,10 @@ import pandas as pd
 import numpy as np
 from sklearn.impute import SimpleImputer
 from sklearn.preprocessing import StandardScaler
-from scipy import stats
 from bayesian_network import BayesianNetwork, HierarchicalBayesianNetwork
 from typing import List
 import logging
+from tasks import fit_bayesian_network, compute_sensitivity, cross_validate
 
 logging.basicConfig(level=logging.INFO)
 
@@ -25,12 +25,6 @@ relevant_features_hcp = [
     'FS_L_Caudate_Vol', 'FS_R_Caudate_Vol', 'FS_L_Putamen_Vol', 'FS_R_Putamen_Vol',
 ]
 
-levels = ["low", "mid", "high"]
-level_constraints = {
-        "mid": ["low"],
-        "high": ["low", "mid"]
-    }
-
 # Include all FreeSurfer variables, especially those with "temporal" or "Temporal"
 relevant_features_hcp_temporal = [col for col in hcp.columns if 'temporal' in col.lower()]
 relevant_features_hcp = list(set(relevant_features_hcp.copy() + relevant_features_hcp_temporal))
@@ -38,6 +32,7 @@ relevant_features_hcp = list(set(relevant_features_hcp.copy() + relevant_feature
 hcp = hcp[relevant_features_hcp].copy()
 behavioral = behavioral[relevant_features_behavioral].copy()
 
+# Merge the datasets
 data = pd.merge(hcp, behavioral, on=["Subject", "Gender"])
 
 # Specify categorical columns
@@ -45,25 +40,26 @@ categorical_columns = ['Gender', 'Age', 'MMSE_Score']
 
 def preprocess_data(data: pd.DataFrame, categorical_columns: List[str]) -> pd.DataFrame:
     data = data.copy()
-    
+
+    # Separate categorical and numeric columns
+    numeric_columns = data.select_dtypes(include=[np.number]).columns.tolist()
+    numeric_columns = [col for col in numeric_columns if col not in categorical_columns]
+
     # Handle missing values
-    numeric_columns = data.select_dtypes(include=[np.number]).columns
-    categorical_columns = data.select_dtypes(include=['object']).columns.tolist() + ['MMSE_Score']
-    
     numeric_imputer = SimpleImputer(strategy='median')
     data[numeric_columns] = numeric_imputer.fit_transform(data[numeric_columns])
-    
+
     categorical_imputer = SimpleImputer(strategy='most_frequent')
     data[categorical_columns] = categorical_imputer.fit_transform(data[categorical_columns])
-    
+
     # Encode categorical variables
     for col in categorical_columns:
         data[col] = pd.Categorical(data[col]).codes
-    
+
     # Scale numeric features
     scaler = StandardScaler()
     data[numeric_columns] = scaler.fit_transform(data[numeric_columns])
-    
+
     return data
 
 df_processed = preprocess_data(data, categorical_columns)
@@ -102,7 +98,7 @@ prior_edges = [
 ]
 
 # Add connections for temporal lobe measures
-temporal_measures = [col for col in data.columns if 'temporal' in col.lower()]
+temporal_measures = [col for col in df_processed.columns if 'temporal' in col.lower()]
 for measure in temporal_measures:
     prior_edges.append((measure, 'CogCrystalComp_Unadj'))
     prior_edges.append((measure, 'ReadEng_Unadj'))
@@ -127,7 +123,7 @@ print("Columns in df_processed:")
 print(df_processed.columns)
 
 # When creating the model
-model = BayesianNetwork(method='hill_climb', max_parents=5, categorical_columns=categorical_columns)
+model = BayesianNetwork(method='hill_climb', max_parents=4, categorical_columns=categorical_columns)
 
 # When fitting the model
 model.fit(df_processed, prior_edges=filtered_prior_edges)
@@ -142,15 +138,21 @@ print(f"Cross-validation: Mean LL = {mean_ll:.4f}, Std = {std_ll:.4f}")
 
 # Compute sensitivity for CogFluidComp_Unadj
 sensitivity = model.compute_sensitivity('CogFluidComp_Unadj', num_samples=1000)
-top_sensitivities = sorted(sensitivity.items(), key=lambda x: x[1], reverse=True)[:10]
-print("\nTop 10 sensitivities for CogFluidComp_Unadj:")
-for node, value in top_sensitivities:
-    print(f"Sensitivity to {node}: {value:.4f}")
+if isinstance(sensitivity, dict):
+    top_sensitivities = sorted(sensitivity.items(), key=lambda x: x[1], reverse=True)[:10]
+    print("\nTop 10 sensitivities for CogFluidComp_Unadj:")
+    for node, value in top_sensitivities:
+        print(f"Sensitivity to {node}: {value:.4f}")
+else:
+    print("Error: Sensitivity computation did not return a dictionary.")
 
 # Print the network structure
 print("\nNetwork structure:")
-network_structure = model.explain_structure_extended()
-print(network_structure)
+try:
+    network_structure = model.explain_structure_extended()
+    print(network_structure)
+except IndexError as e:
+    print(f"Error in explaining structure: {e}")
 
 # Perform Metropolis-Hastings sampling
 observed_data = {
@@ -169,8 +171,8 @@ for node, samples in mh_samples.items():
 results = {
     "log_likelihood": log_likelihood,
     "cross_validation": {"mean": mean_ll, "std": std_ll},
-    "top_sensitivities": dict(top_sensitivities),
-    "network_structure": network_structure,
+    "top_sensitivities": dict(top_sensitivities) if isinstance(sensitivity, dict) else {},
+    "network_structure": network_structure if 'network_structure' in locals() else "Error in network structure",
     "mh_samples": {node: {"mean": float(np.mean(samples)), "std": float(np.std(samples))} 
                    for node, samples in mh_samples.items() if node not in observed_data}
 }
@@ -181,6 +183,12 @@ print("\nAnalysis complete.")
 # Example of using HierarchicalBayesianNetwork
 hierarchical_levels = ['cellular', 'regional', 'functional']
 h_model = HierarchicalBayesianNetwork(levels=hierarchical_levels, method='hill_climb', max_parents=3)
+
+# Define level constraints
+level_constraints = {
+    "functional": ["regional"],
+    "regional": ["cellular"]
+}
 
 # Add nodes to specific levels
 h_model.add_node('FS_L_Hippo_Vol', 'regional')
@@ -197,4 +205,3 @@ h_model.fit(df_processed, level_constraints=level_constraints)
 # Print hierarchical structure
 print("\nHierarchical Network Structure:")
 print(h_model.explain_structure_extended())
-print("\nHierarchical Analysis complete.")
