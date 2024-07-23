@@ -1,9 +1,10 @@
 import pandas as pd
 import numpy as np
 from sklearn.model_selection import train_test_split
-from bayesian_network import BayesianNetwork
 import logging
 from typing import List, Callable, Tuple, Dict, Any
+
+from .bayesian_network import BayesianNetwork
 
 logger = logging.getLogger(__name__)
 

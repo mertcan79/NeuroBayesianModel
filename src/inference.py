@@ -1,7 +1,7 @@
 import numpy as np
 import pandas as pd
 from typing import Dict
-from bayesian_node import BayesianNode, CategoricalNode
+from .bayesian_node import BayesianNode, CategoricalNode
 import logging
 
 # Set up logging configuration

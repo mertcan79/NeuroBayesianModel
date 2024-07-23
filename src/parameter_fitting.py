@@ -3,8 +3,8 @@ import pandas as pd
 from typing import Dict
 from scipy import stats
 import logging
-from sklearn.impute import SimpleImputer
-from bayesian_node import BayesianNode, CategoricalNode
+
+from .bayesian_node import BayesianNode, CategoricalNode
 
 logger = logging.getLogger(__name__)
 

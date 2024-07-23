@@ -1,11 +1,11 @@
 from celery import Celery
 import pandas as pd
 import numpy as np
-from bayesian_network import BayesianNetwork, HierarchicalBayesianNetwork
 from pgmpy.estimators import HillClimbSearch, BayesianEstimator, BicScore
 from pgmpy.models import BayesianNetwork as PgmpyBN
 from pgmpy.estimators import K2Score
 
+from .bayesian_network import BayesianNetwork, HierarchicalBayesianNetwork
 
 app = Celery('NeuroBayesianModel',
              broker='redis://localhost:6379/0',

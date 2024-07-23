@@ -2,8 +2,9 @@ import numpy as np
 import pandas as pd
 from typing import Dict, List, Tuple
 from pgmpy.estimators import HillClimbSearch, BicScore, K2Score, BDeuScore
-from bayesian_node import BayesianNode, CategoricalNode
 import logging
+
+from .bayesian_node import BayesianNode, CategoricalNode
 
 logger = logging.getLogger(__name__)
 
