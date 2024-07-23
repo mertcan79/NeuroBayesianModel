@@ -81,7 +81,9 @@ def prepare_data() -> Tuple[pd.DataFrame, List[str], Dict[str, List]]:
 
     behavioral, hcp = load_data()
     
-    behavioral, hcp = optimize_data_types(behavioral, hcp)
+    behavioral= optimize_data_types(behavioral)
+
+    hcp= optimize_data_types(hcp)
 
     behavioral, hcp = select_features(behavioral, hcp)
     
