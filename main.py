@@ -9,7 +9,20 @@ from src.modeling import BayesianModel
 from src.bayesian_network import HierarchicalBayesianNetwork
 
 import sys
+from dotenv import load_dotenv
 import os
+
+load_dotenv()
+
+# Determine which path to use based on ENVIRONMENT variable
+environment = os.getenv('ENVIRONMENT', 'local')  # Default to 'local' if ENVIRONMENT is not set
+
+if environment == 'local':
+    data_path = os.getenv('LOCAL_DATA_PATH')
+elif environment == 'cloud':
+    data_path = os.getenv('CLOUD_DATA_PATH')
+else:
+    raise ValueError(f"Unknown environment: {environment}")
 
 # Add 'src' to the Python path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), 'src')))
