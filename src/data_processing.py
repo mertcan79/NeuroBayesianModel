@@ -24,16 +24,17 @@ def load_data() -> Tuple[pd.DataFrame, pd.DataFrame]:
     hcp = pd.read_csv('/home/ubuntu/NeuroBayesianModel/data/hcp_freesurfer.csv')
     return behavioral, hcp
 
+
 def select_features(behavioral: pd.DataFrame, hcp: pd.DataFrame) -> Tuple[pd.DataFrame, pd.DataFrame]:
     relevant_features_behavioral = [
         'Subject', 'Age', 'Gender', 'CogFluidComp_Unadj', 'CogCrystalComp_Unadj', 'MMSE_Score',
-        'NEOFAC_O', 'NEOFAC_C', 'ProcSpeed_Unadj', 'CardSort_Unadj', 'PicVocab_Unadj', 'ReadEng_Unadj'
+        'NEOFAC_O', 'NEOFAC_C'
     ]
 
     relevant_features_hcp = [
-        'Subject', 'FS_TotCort_GM_Vol', 'FS_SubCort_GM_Vol', 'FS_Total_GM_Vol', 'FS_Tot_WM_Vol', 'FS_BrainStem_Vol',
-        'FS_L_Hippo_Vol', 'FS_R_Hippo_Vol', 'FS_L_Amygdala_Vol', 'FS_R_Amygdala_Vol',
-        'FS_L_Caudate_Vol', 'FS_R_Caudate_Vol', 'FS_L_Putamen_Vol', 'FS_R_Putamen_Vol',
+        'Subject', 'FS_Total_GM_Vol', 'FS_Tot_WM_Vol',
+        'FS_L_Hippo_Vol', 'FS_R_Hippo_Vol',
+        'FS_L_Amygdala_Vol', 'FS_R_Amygdala_Vol'
     ]
 
     hcp = hcp[relevant_features_hcp].copy()
