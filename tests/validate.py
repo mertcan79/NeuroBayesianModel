@@ -10,7 +10,7 @@ class TestBayesianNetwork(unittest.TestCase):
             'B': np.random.normal(0, 1, 100),
             'C': np.random.normal(0, 1, 100)
         })
-        self.bn = BayesianNetwork(method='hill_climb', max_parents=2)
+        self.bn = BayesianNetwork(method='hill_climb', max_parents=3)
 
     def test_fit(self):
         self.bn.fit(self.data)

@@ -33,11 +33,9 @@ def main():
     data, categorical_columns = prepare_data()
 
     # Select a smaller subset of columns to reduce complexity
-    selected_columns = [
-        'Age', 'Gender', 'MMSE_Score', 'CogFluidComp_Unadj', 'CogCrystalComp_Unadj',
-        'FS_Total_GM_Vol'
-    ]
+    selected_columns = ['Age', 'Gender', 'MMSE_Score', 'CogFluidComp_Unadj']
     data = data[selected_columns]
+    
     categorical_columns = [col for col in categorical_columns if col in selected_columns]
 
     # Define a simpler Bayesian Network structure

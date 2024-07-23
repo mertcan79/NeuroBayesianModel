@@ -15,6 +15,7 @@ import os
 from datetime import datetime
 from functools import lru_cache
 from joblib import Parallel, delayed
+import logging
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -156,8 +157,13 @@ class BayesianNetwork:
         return data.apply(lambda col: pd.Categorical(col).codes if col.name in self.categorical_columns else col)
 
     def _learn_structure(self, data: pd.DataFrame):
-        self.nodes = learn_structure(data, method=self.method, max_parents=self.max_parents, 
-                                    categorical_columns=self.categorical_columns)
+        self.nodes = learn_structure(
+            data, 
+            method=self.method, 
+            max_parents=self.max_parents, 
+            iterations=self.iterations,
+            prior_edges=self.prior_edges
+        )
 
     def _create_nodes(self, data: pd.DataFrame):
         for column in data.columns:
@@ -213,13 +219,17 @@ class BayesianNetwork:
                         perturbed_network = copy.deepcopy(self)
                         perturbed_samples = perturbed_network.sample_node(node_name, size=num_samples)
                         
+                        if hasattr(node, 'transform'):
+                            perturbed_samples_transformed = node.transform(perturbed_samples)
+                        else:
+                            perturbed_samples_transformed = perturbed_samples
+                        
                         if isinstance(node, CategoricalNode):
                             unique, counts = np.unique(perturbed_samples, return_counts=True)
                             prob_dict = dict(zip(unique, counts / len(perturbed_samples)))
                             probabilities = [prob_dict.get(cat, 0) for cat in node.categories]
                             perturbed_network.nodes[node_name].set_distribution(probabilities)
                         else:
-                            perturbed_samples_transformed = node.transform(perturbed_samples)
                             mean = np.mean(perturbed_samples_transformed)
                             std = np.std(perturbed_samples_transformed)
                             perturbed_network.nodes[node_name].set_distribution((mean, std))
@@ -267,16 +277,11 @@ class BayesianNetwork:
         }
 
         for node_name, node in self.nodes.items():
-            if node.parents:
-                structure[node_name] = {
-                    "parents": [parent.name for parent in node.parents],
-                    "parameters": node.parameters
-                }
-            else:
-                structure[node_name] = {
-                    "parents": [],
-                    "parameters": node.parameters
-                }
+            structure[node_name] = {
+                "parents": [parent.name for parent in node.parents],
+                "parameters": node.parameters if hasattr(node, 'parameters') else None,
+                "distribution": str(node.distribution) if hasattr(node, 'distribution') else None
+            }
 
         return structure
 
@@ -300,3 +305,41 @@ class BayesianNetwork:
         with open(filename, 'r') as f:
             data = json.load(f)
         return cls.from_dict(data)
+
+class HierarchicalBayesianNetwork(BayesianNetwork):
+    def __init__(self, levels: List[str], *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.levels = levels
+        self.level_nodes = {level: [] for level in levels}
+
+    def add_node(self, node: str, level: str):
+        if level not in self.levels:
+            raise ValueError(f"Invalid level: {level}")
+        self.nodes[node] = BayesianNode(node)
+        self.level_nodes[level].append(node)
+
+    def add_edge(self, parent: str, child: str):
+        if parent not in self.nodes or child not in self.nodes:
+            raise ValueError("Both nodes must exist in the network")
+        self.nodes[child].parents.append(self.nodes[parent])
+        self.nodes[parent].children.append(self.nodes[child])
+
+    def fit(self, data: pd.DataFrame, level_constraints: Dict[str, List[str]] = None):
+        preprocessed_data = self.preprocess_data(data)
+        for level in self.levels:
+            level_data = preprocessed_data[self.level_nodes[level]]
+            allowed_parents = self.level_nodes[level]
+            if level_constraints and level in level_constraints:
+                allowed_parents += level_constraints[level]
+            self._learn_structure(level_data, allowed_parents=allowed_parents)
+        fit_parameters(self.nodes, preprocessed_data)
+
+    def _learn_structure(self, data: pd.DataFrame, allowed_parents: List[str]):
+        self.nodes = learn_structure(data, method=self.method, max_parents=self.max_parents, 
+                                    prior_edges=self.prior_edges, categorical_columns=self.categorical_columns)
+        for node in self.nodes.values():
+            node.parents = [parent for parent in node.parents if parent.name in allowed_parents]
+
+        # Enforce the structure according to the allowed_parents
+        for node_name, node in self.nodes.items():
+            node.parents = [self.nodes[parent_name] for parent_name in allowed_parents if parent_name in self.nodes and parent_name in node.parents]

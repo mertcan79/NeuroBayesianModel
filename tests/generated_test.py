@@ -27,7 +27,7 @@ if __name__ == "__main__":
         print(f"Data generated: {len(data)} samples, {len(data.columns)} features")
 
         print("Creating and fitting Bayesian Network...")
-        bn = BayesianNetwork(method='hill_climb', max_parents=2)
+        bn = BayesianNetwork(method='hill_climb', max_parents=3)
         prior_edges = [('A', 'B'), ('A', 'C'), ('B', 'C')]
         bn.fit(train_data, prior_edges, progress_callback=progress_callback)
 

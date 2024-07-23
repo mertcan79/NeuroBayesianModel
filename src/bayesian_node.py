@@ -1,80 +1,95 @@
 import numpy as np
+from typing import List, Tuple, Union
 from scipy import stats
-from sklearn.linear_model import LinearRegression
 
 class BayesianNode:
-    def __init__(self, name):
+    def __init__(self, name: str):
         self.name = name
-        self.parents = []
-        self.children = []
+        self.parents: List['BayesianNode'] = []
+        self.children: List['BayesianNode'] = []
+        self.parameters = None
         self.distribution = None
-        self.params = {}
-        self.regression_model = None
+        self.is_categorical = False
+        self.categories = None
 
-    def to_dict(self):
-        return {
-            'name': self.name,
-            'parents': [parent.name for parent in self.parents],
-            'children': [child.name for child in self.children],
-            'distribution': str(self.distribution) if self.distribution else None,
-            'params': self.params,
-        }
+    def add_parent(self, parent: 'BayesianNode'):
+        if parent not in self.parents:
+            self.parents.append(parent)
 
-    @classmethod
-    def from_dict(cls, data):
-        node = cls(data['name'])
-        node.params = data['params']
-        if data['distribution']:
-            node.distribution = getattr(stats, data['distribution'].split('.')[-1])
-        return node
+    def add_child(self, child: 'BayesianNode'):
+        if child not in self.children:
+            self.children.append(child)
 
-    def set_parameters(self, values, parent_variables):
-        if isinstance(self, CategoricalNode):
-            self.cpt = values
+    def set_parameters(self, parameters):
+        self.parameters = parameters
+
+    def set_distribution(self, distribution):
+        self.distribution = distribution
+
+    def set_categorical(self, is_categorical: bool, categories: List = None):
+        self.is_categorical = is_categorical
+        self.categories = categories
+
+    def fit(self, node_data, parent_data=None):
+        if self.is_categorical:
+            self.fit_categorical(node_data, parent_data)
         else:
-            # Assume continuous node
-            self.distribution = stats.norm(loc=np.mean(values), scale=np.std(values))
-        self.params = {'values': values, 'parent_variables': parent_variables}
+            self.fit_continuous(node_data, parent_data)
 
-
-    def fit(self, data, parent_data=None):
-        if parent_data is None or len(parent_data) == 0:
-            mean, std = np.mean(data), np.std(data)
-            self.distribution = stats.norm(loc=mean, scale=std)
-            self.params = {"loc": mean, "scale": std}
+    def fit_categorical(self, node_data, parent_data=None):
+        if parent_data is None or parent_data.empty:
+            # If no parents, just compute probabilities
+            value_counts = node_data.value_counts(normalize=True)
+            self.distribution = value_counts.to_dict()
         else:
-            self.regression_model = LinearRegression()
-            self.regression_model.fit(parent_data, data)
-            residuals = data - self.regression_model.predict(parent_data)
-            std = np.std(residuals)
-            self.params = {
-                "coefficients": self.regression_model.coef_,
-                "intercept": self.regression_model.intercept_,
-                "scale": std,
-            }
-        return self  # Return self to allow method chaining
+            # If parents exist, compute conditional probabilities
+            joint_counts = pd.crosstab(parent_data.apply(tuple, axis=1), node_data)
+            self.distribution = (joint_counts / joint_counts.sum(axis=1)).to_dict()
 
-    def log_probability(self, value, parent_values=None):
-        if self.distribution is None and self.regression_model is None:
-            raise ValueError("Distribution not fitted yet")
-
-        if parent_values is None or len(parent_values) == 0:
-            return self.distribution.logpdf(value)
+    def fit_continuous(self, node_data, parent_data=None):
+        if parent_data is None or parent_data.empty:
+            # If no parents, fit a normal distribution
+            mean, std = stats.norm.fit(node_data)
+            self.distribution = (mean, std)
         else:
-            predicted = self.regression_model.predict([parent_values])[0]
-            return stats.norm(loc=predicted, scale=self.params["scale"]).logpdf(value)
+            # If parents exist, fit a linear regression
+            X = parent_data
+            y = node_data
+            model = stats.linregress(X, y)
+            self.distribution = model
 
-    def sample(self, size=1, parent_values=None):
-        if self.distribution is None and self.regression_model is None:
-            raise ValueError("Node not fitted yet")
+    def transform(self, data: np.ndarray) -> np.ndarray:
+        # This method should be implemented based on your specific needs
+        # For now, we'll just return the data as-is
+        return data
 
-        if parent_values is None or len(parent_values) == 0:
-            return self.distribution.rvs(size=size)
+    def sample(self, size: int = 1, parent_values: dict = None) -> np.ndarray:
+        if self.distribution is None:
+            raise ValueError(f"Distribution for node {self.name} is not set")
+        
+        if self.is_categorical:
+            return np.random.choice(self.categories, size=size, p=self.distribution)
         else:
-            if self.regression_model is None:
-                raise ValueError("Regression model not fitted for node with parents")
-            predicted = self.regression_model.predict([parent_values])[0]
-            return stats.norm(loc=predicted, scale=self.params["scale"]).rvs(size=size)
+            # Assuming a Gaussian distribution for continuous variables
+            mean, std = self.distribution
+            return np.random.normal(mean, std, size=size)
+
+    def log_probability(self, value: Union[float, str], parent_values: Tuple = None) -> float:
+        if self.distribution is None:
+            raise ValueError(f"Distribution for node {self.name} is not set")
+        
+        if self.is_categorical:
+            if value not in self.categories:
+                return float('-inf')
+            index = self.categories.index(value)
+            return np.log(self.distribution[index])
+        else:
+            # Assuming a Gaussian distribution for continuous variables
+            mean, std = self.distribution
+            return -0.5 * ((value - mean) / std) ** 2 - np.log(std * np.sqrt(2 * np.pi))
+
+    def __repr__(self):
+        return f"BayesianNode(name={self.name}, parents={[p.name for p in self.parents]}, children={[c.name for c in self.children]})"
 
 class CategoricalNode(BayesianNode):
     def __init__(self, name, categories):

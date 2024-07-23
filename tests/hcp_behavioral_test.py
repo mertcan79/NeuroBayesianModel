@@ -103,7 +103,7 @@ for measure in temporal_measures:
     prior_edges.append((measure, 'ReadEng_Unadj'))
 
 # Create and fit the model
-model = BayesianNetwork(method='hill_climb', max_parents=5)  # Increased max_parents
+model = BayesianNetwork(method='hill_climb', max_parents=3)  # Increased max_parents
 model.fit(df_processed, prior_edges=prior_edges)
 
 # Compute and print log-likelihood

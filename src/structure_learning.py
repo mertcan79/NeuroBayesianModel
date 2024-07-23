@@ -1,44 +1,67 @@
 import numpy as np
 import pandas as pd
 from typing import Dict, List, Tuple
-from pgmpy.estimators import HillClimbSearch, BicScore, K2Score
+from pgmpy.estimators import HillClimbSearch, BicScore, K2Score, BDeuScore
 from bayesian_node import BayesianNode, CategoricalNode
+import logging
 
-def learn_structure(data: pd.DataFrame, method: str = 'hill_climb', max_parents: int = 3, 
-                    prior_edges: List[tuple] = None, categorical_columns: List[str] = None) -> Dict[str, BayesianNode]:
-    if method != 'hill_climb':
-        raise ValueError(f"Unsupported method: {method}. Only 'hill_climb' is currently supported.")
+logger = logging.getLogger(__name__)
 
-    hc = HillClimbSearch(data)
-    k2_score = K2Score(data)
 
-    # Incorporate prior edges if provided
-    if prior_edges:
-        # Create a blacklist of edges that are not in prior_edges
-        blacklist = [(child, parent) for parent, child in prior_edges]
-        for node1 in data.columns:
-            for node2 in data.columns:
-                if node1 != node2 and (node1, node2) not in prior_edges and (node2, node1) not in prior_edges:
-                    blacklist.append((node1, node2))
-                    blacklist.append((node2, node1))
-    else:
-        blacklist = None
+def learn_structure(data: pd.DataFrame, method: str = 'hill_climb', max_parents: int = 3, iterations: int = 100, prior_edges: List[tuple] = None) -> Dict[str, BayesianNode]:
+    """
+    Learn the structure of a Bayesian Network from data.
+    
+    :param data: DataFrame containing the data
+    :param method: Structure learning method (currently only 'hill_climb' is supported)
+    :param max_parents: Maximum number of parents for any node
+    :param iterations: Maximum number of iterations for the Hill Climbing algorithm
+    :param prior_edges: List of tuples representing prior edges to include in the network
+    :return: Dictionary of BayesianNode objects representing the learned network structure
+    """
+    try:
+        if method != 'hill_climb':
+            raise ValueError(f"Unsupported method: {method}. Only 'hill_climb' is currently supported.")
 
-    model = hc.estimate(scoring_method=k2_score, max_indegree=max_parents, black_list=blacklist)
+        # Initialize the Hill Climbing search
+        hc = HillClimbSearch(data)
+        bdeu_score = BDeuScore(data, equivalent_sample_size=10)
 
-    nodes = {}
-    for node in model.nodes():
-        if categorical_columns and node in categorical_columns:
-            nodes[node] = CategoricalNode(node, list(data[node].unique()))
-        else:
+        # Create a blacklist of edges (if needed)
+        blacklist = []
+
+        # Create a whitelist of edges from prior_edges
+        whitelist = prior_edges if prior_edges else []
+
+        logger.info(f"Starting structure learning with max_parents={max_parents}, iterations={iterations}")
+        
+        # Estimate the model structure
+        estimated_model = hc.estimate(
+            scoring_method=bdeu_score,
+            max_indegree=max_parents,
+            black_list=blacklist,
+            white_list=whitelist,
+            epsilon=1e-4,
+            max_iter=iterations
+        )
+
+        # Convert pgmpy model to our custom format
+        nodes = {}
+        for node in estimated_model.nodes():
             nodes[node] = BayesianNode(node)
 
-    for edge in model.edges():
-        parent, child = edge
-        nodes[child].parents.append(nodes[parent])
-        nodes[parent].children.append(nodes[child])
+        for edge in estimated_model.edges():
+            parent, child = edge
+            nodes[child].add_parent(nodes[parent])
+            nodes[parent].add_child(nodes[child])
 
-    return nodes
+        logger.info(f"Structure learning complete. Learned {len(nodes)} nodes and {len(estimated_model.edges())} edges.")
+        
+        return nodes
+
+    except Exception as e:
+        logger.error(f"Error in structure learning: {str(e)}")
+        raise
 
 def k2_algorithm(
     data: pd.DataFrame,
