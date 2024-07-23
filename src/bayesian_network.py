@@ -23,7 +23,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 class BayesianNetwork:
-    def __init__(self, method='hill_climb', max_parents=3, iterations=100, categorical_columns=None, categories=None):
+    def __init__(self, method='hill_climb', max_parents=2, iterations=300, categorical_columns=None, categories=None):
         self.method = method
         self.max_parents = max_parents
         self.iterations = iterations
@@ -123,7 +123,6 @@ class BayesianNetwork:
         with open(file_path, 'w') as f:
             json.dump(serializable_results, f, indent=2)
         
-        print(f"Results written to {file_path}")
 
     def write_summary_to_json(self, results: Dict[str, Any], filename: str = None):
         if filename is None:
@@ -156,7 +155,6 @@ class BayesianNetwork:
         with open(file_path, 'w') as f:
             json.dump(summary, f, indent=2)
         
-        print(f"Summary results written to {file_path}")
 
     def get_edges(self):
         edges = []

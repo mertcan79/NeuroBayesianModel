@@ -9,7 +9,7 @@ from .bayesian_network import BayesianNetwork
 logger = logging.getLogger(__name__)
 
 class BayesianModel:
-    def __init__(self, method='hill_climb', max_parents=4, iterations=1000, categorical_columns=None):
+    def __init__(self, method='hill_climb', max_parents=2, iterations=300, categorical_columns=None):
         self.network = BayesianNetwork(method=method, max_parents=max_parents, iterations=iterations, categorical_columns=categorical_columns)
 
 

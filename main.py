@@ -78,7 +78,7 @@ def main():
 
     # Create and analyze Bayesian Network
     logger.info("Creating Bayesian Network")
-    model = BayesianModel(method='hill_climb', max_parents=4, iterations=1000, categorical_columns=categorical_columns)
+    model = BayesianModel(method='hill_climb', max_parents=2, iterations=300, categorical_columns=categorical_columns)
     model.fit(data, prior_edges=prior_edges)
 
     logger.info("Analyzing Bayesian Network")
@@ -121,7 +121,7 @@ def main():
         'Cognitive_Function': ['CogFluidComp_Unadj', 'CogCrystalComp_Unadj', 'MMSE_Score', 'ProcSpeed_Unadj', 'CardSort_Unadj', 'PicVocab_Unadj', 'ReadEng_Unadj'],
         'Personality': ['NEOFAC_O', 'NEOFAC_C']
     }
-    h_model = HierarchicalBayesianNetwork(levels=levels, method='hill_climb', max_parents=4, iterations=1000, categorical_columns=categorical_columns)
+    h_model = HierarchicalBayesianNetwork(levels=levels, method='hill_climb', max_parents=2, iterations=300, categorical_columns=categorical_columns)
     h_model.fit(data, level_constraints=level_constraints)
 
     logger.info("Analyzing Hierarchical Bayesian Network")
