@@ -5,8 +5,8 @@ from sklearn.preprocessing import StandardScaler
 from typing import List, Tuple
 
 def load_data() -> Tuple[pd.DataFrame, pd.DataFrame]:
-    behavioral = pd.read_csv('/Users/macbookair/Documents/neurobayesianmodel/data/connectome_behavioral.csv')
-    hcp = pd.read_csv('/Users/macbookair/Documents/neurobayesianmodel/data/hcp_freesurfer.csv')
+    behavioral = pd.read_csv('/Users/macbookair/Documents/NeuroBayesianModel/data/connectome_behavioral.csv')
+    hcp = pd.read_csv('/Users/macbookair/Documents/NeuroBayesianModel/data/hcp_freesurfer.csv')
     return behavioral, hcp
 
 def select_features(behavioral: pd.DataFrame, hcp: pd.DataFrame) -> Tuple[pd.DataFrame, pd.DataFrame]:
@@ -16,13 +16,10 @@ def select_features(behavioral: pd.DataFrame, hcp: pd.DataFrame) -> Tuple[pd.Dat
     ]
 
     relevant_features_hcp = [
-        'Subject', 'Gender', 'FS_TotCort_GM_Vol', 'FS_SubCort_GM_Vol', 'FS_Total_GM_Vol', 'FS_Tot_WM_Vol', 'FS_BrainStem_Vol',
+        'Subject', 'FS_TotCort_GM_Vol', 'FS_SubCort_GM_Vol', 'FS_Total_GM_Vol', 'FS_Tot_WM_Vol', 'FS_BrainStem_Vol',
         'FS_L_Hippo_Vol', 'FS_R_Hippo_Vol', 'FS_L_Amygdala_Vol', 'FS_R_Amygdala_Vol',
         'FS_L_Caudate_Vol', 'FS_R_Caudate_Vol', 'FS_L_Putamen_Vol', 'FS_R_Putamen_Vol',
     ]
-
-    relevant_features_hcp_temporal = [col for col in hcp.columns if 'temporal' in col.lower()]
-    relevant_features_hcp = list(set(relevant_features_hcp + relevant_features_hcp_temporal))
 
     hcp = hcp[relevant_features_hcp].copy()
     behavioral = behavioral[relevant_features_behavioral].copy()
@@ -51,9 +48,9 @@ def preprocess_data(data: pd.DataFrame, categorical_columns: List[str]) -> pd.Da
 def prepare_data() -> Tuple[pd.DataFrame, List[str]]:
     behavioral, hcp = load_data()
     behavioral, hcp = select_features(behavioral, hcp)
-    data = pd.merge(hcp, behavioral, on=["Subject", "Gender"])
+    data = pd.merge(hcp, behavioral, on="Subject")
     
-    categorical_columns = ['Gender', 'Age', 'MMSE_Score']
+    categorical_columns = ['Gender', 'MMSE_Score']
     
     processed_data = preprocess_data(data, categorical_columns)
     
