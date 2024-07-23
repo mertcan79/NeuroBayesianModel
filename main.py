@@ -44,27 +44,27 @@ def main():
     data, categorical_columns, categories = prepare_data()
 
     # Define prior edges
- prior_edges = [
-    ('Age', 'CogFluidComp_Unadj'),
-    ('Age', 'CogCrystalComp_Unadj'),
-    ('Age', 'MMSE_Score'),
-    ('Gender', 'CogFluidComp_Unadj'),
-    ('Gender', 'CogCrystalComp_Unadj'),
-    ('MMSE_Score', 'CogFluidComp_Unadj'),
-    ('MMSE_Score', 'CogCrystalComp_Unadj'),
-    ('FS_Total_GM_Vol', 'CogFluidComp_Unadj'),
-    ('FS_Total_GM_Vol', 'CogCrystalComp_Unadj'),
-    ('FS_Tot_WM_Vol', 'CogFluidComp_Unadj'),
-    ('FS_Tot_WM_Vol', 'CogCrystalComp_Unadj'),
-    ('FS_L_Hippo_Vol', 'CogFluidComp_Unadj'),
-    ('FS_R_Hippo_Vol', 'CogFluidComp_Unadj'),
-    ('FS_L_Amygdala_Vol', 'NEOFAC_O'),
-    ('FS_R_Amygdala_Vol', 'NEOFAC_O'),
-    ('NEOFAC_O', 'CogCrystalComp_Unadj'),
-    ('NEOFAC_C', 'CogFluidComp_Unadj'),
-    ('FS_L_Hippo_Vol', 'NEOFAC_O'),
-    ('FS_R_Hippo_Vol', 'NEOFAC_O'),
-]
+    prior_edges = [
+        ('Age', 'CogFluidComp_Unadj'),
+        ('Age', 'CogCrystalComp_Unadj'),
+        ('Age', 'MMSE_Score'),
+        ('Gender', 'CogFluidComp_Unadj'),
+        ('Gender', 'CogCrystalComp_Unadj'),
+        ('MMSE_Score', 'CogFluidComp_Unadj'),
+        ('MMSE_Score', 'CogCrystalComp_Unadj'),
+        ('FS_Total_GM_Vol', 'CogFluidComp_Unadj'),
+        ('FS_Total_GM_Vol', 'CogCrystalComp_Unadj'),
+        ('FS_Tot_WM_Vol', 'CogFluidComp_Unadj'),
+        ('FS_Tot_WM_Vol', 'CogCrystalComp_Unadj'),
+        ('FS_L_Hippo_Vol', 'CogFluidComp_Unadj'),
+        ('FS_R_Hippo_Vol', 'CogFluidComp_Unadj'),
+        ('FS_L_Amygdala_Vol', 'NEOFAC_O'),
+        ('FS_R_Amygdala_Vol', 'NEOFAC_O'),
+        ('NEOFAC_O', 'CogCrystalComp_Unadj'),
+        ('NEOFAC_C', 'CogFluidComp_Unadj'),
+        ('FS_L_Hippo_Vol', 'NEOFAC_O'),
+        ('FS_R_Hippo_Vol', 'NEOFAC_O'),
+    ]
 
     # Create and analyze Bayesian Network
     logger.info("Creating Bayesian Network")
