@@ -8,7 +8,7 @@ from typing import List, Callable, Tuple, Dict, Any
 logger = logging.getLogger(__name__)
 
 class BayesianModel:
-    def __init__(self, method='hill_climb', max_parents=3, iterations=100, categorical_columns=None):
+    def __init__(self, method='hill_climb', max_parents=3, iterations=1000, categorical_columns=None):
         self.network = BayesianNetwork(method=method, max_parents=max_parents, iterations=iterations, categorical_columns=categorical_columns)
 
 
@@ -52,6 +52,6 @@ class BayesianModel:
         model.network = network
         return model
 
-    def compute_sensitivity(self, target_node: str, num_samples: int = 100) -> Dict[str, float]:
+    def compute_sensitivity(self, target_node: str, num_samples: int = 1000) -> Dict[str, float]:
         """Compute sensitivity of the target node to changes in other nodes."""
         return self.network.compute_sensitivity(target_node, num_samples=num_samples)

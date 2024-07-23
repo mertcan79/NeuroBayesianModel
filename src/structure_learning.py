@@ -8,7 +8,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-def learn_structure(data: pd.DataFrame, method: str = 'hill_climb', max_parents: int = 3, iterations: int = 100, prior_edges: List[tuple] = None) -> Dict[str, BayesianNode]:
+def learn_structure(data: pd.DataFrame, method: str = 'hill_climb', max_parents: int = 3, iterations: int = 1000, prior_edges: List[tuple] = None) -> Dict[str, BayesianNode]:
     """
     Learn the structure of a Bayesian Network from data.
     

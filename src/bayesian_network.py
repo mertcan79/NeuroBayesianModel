@@ -21,7 +21,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 class BayesianNetwork:
-    def __init__(self, method='hill_climb', max_parents=3, iterations=100, categorical_columns=None):
+    def __init__(self, method='hill_climb', max_parents=3, iterations=1000, categorical_columns=None):
         self.method = method
         self.max_parents = max_parents
         self.iterations = iterations
@@ -208,7 +208,7 @@ class BayesianNetwork:
         fold_bn.fit(train_data)
         return fold_bn.log_likelihood(test_data)
 
-    def compute_sensitivity(self, target_node: str, num_samples: int = 10000) -> Dict[str, float]:
+    def compute_sensitivity(self, target_node: str, num_samples: int = 1000) -> Dict[str, float]:
         sensitivity = {}
         try:
             base_samples = self.sample_node(target_node, size=num_samples)

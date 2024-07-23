@@ -1,6 +1,7 @@
 import numpy as np
 from typing import List, Tuple, Union
 from scipy import stats
+import pandas as pd
 
 class BayesianNode:
     def __init__(self, name: str):
