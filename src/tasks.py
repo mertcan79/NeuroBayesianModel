@@ -4,8 +4,6 @@ import numpy as np
 from bayesian_network import BayesianNetwork, HierarchicalBayesianNetwork
 from pgmpy.estimators import HillClimbSearch, BayesianEstimator, BicScore
 from pgmpy.models import BayesianNetwork as PgmpyBN
-from pgmpy.estimators import HillClimbSearch, BayesianEstimator
-from pgmpy.models import BayesianNetwork as PgmpyBN
 from pgmpy.estimators import K2Score
 
 

@@ -1,9 +1,11 @@
 import logging
+from typing import List, Tuple
 import pandas as pd
 import numpy as np
-from typing import List, Tuple
+
 from src.data_processing import prepare_data
-from src.modeling import BayesianModel, HierarchicalBayesianNetwork
+from src.modeling import BayesianModel 
+from src.bayesian_network import HierarchicalBayesianNetwork
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)

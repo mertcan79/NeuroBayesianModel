@@ -21,16 +21,21 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 class BayesianNetwork:
-    def __init__(self, method='hill_climb', max_parents=3, iterations=1000, categorical_columns=None):
+    def __init__(self, method='hill_climb', max_parents=3, iterations=100, categorical_columns=None, categories=None):
         self.method = method
         self.max_parents = max_parents
         self.iterations = iterations
         self.nodes = {}
         self.categorical_columns = categorical_columns or []
-        self.prior_edges = {}
+        self.categories = categories or {}
+        self.prior_edges = []  # Initialize prior_edges as an empty list
         
         for col in self.categorical_columns:
-            self.nodes[col] = CategoricalNode(col, [])  # Empty categories for now
+            if col in self.categories:
+                self.nodes[col] = CategoricalNode(col, self.categories[col])
+            else:
+                self.nodes[col] = CategoricalNode(col, [])  # Empty categories for now
+
 
     def to_dict(self):
         return {
@@ -153,8 +158,12 @@ class BayesianNetwork:
                 if col in self.nodes:
                     self.nodes[col].categories = sorted(data[col].unique())
 
+            # Set prior_edges if provided
+            if prior_edges is not None:
+                self.prior_edges = prior_edges
+
             logger.info("Learning structure")
-            self._learn_structure(data)  # Remove prior_edges from here
+            self._learn_structure(data)
             if progress_callback:
                 progress_callback(0.5)
             
@@ -365,7 +374,7 @@ class HierarchicalBayesianNetwork(BayesianNetwork):
 
     def _learn_structure(self, data: pd.DataFrame, allowed_parents: List[str]):
         self.nodes = learn_structure(data, method=self.method, max_parents=self.max_parents, 
-                                    prior_edges=self.prior_edges, categorical_columns=self.categorical_columns)
+                                    prior_edges=self.prior_edges)
         for node in self.nodes.values():
             node.parents = [parent for parent in node.parents if parent.name in allowed_parents]
 
