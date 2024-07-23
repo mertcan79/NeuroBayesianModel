@@ -1,10 +1,11 @@
 import logging
+import json
+from datetime import datetime
 from typing import List, Tuple
 import pandas as pd
 import numpy as np
-
 from src.data_processing import prepare_data
-from src.modeling import BayesianModel 
+from src.modeling import BayesianModel
 from src.bayesian_network import HierarchicalBayesianNetwork
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -33,7 +34,8 @@ def main():
     logger.info("Starting Bayesian Network analysis")
 
     # Prepare data
-    data, categorical_columns = prepare_data()
+    logger.info("Preparing data...")
+    data, categorical_columns, categories = prepare_data()
 
     # Define prior edges
     prior_edges = [
@@ -87,8 +89,8 @@ def main():
     # Simulate intervention
     logger.info("Simulating intervention")
     interventions = {
-        'Age': 65,
-        'Gender': 1,
+        'Age': categories['Age'][2],  # Example: Select a specific category
+        'Gender': categories['Gender'][1],  # Example: Select a specific category
         'FS_Total_GM_Vol': data['FS_Total_GM_Vol'].mean() + data['FS_Total_GM_Vol'].std(),
         'FS_Tot_WM_Vol': data['FS_Tot_WM_Vol'].mean() + data['FS_Tot_WM_Vol'].std(),
     }
