@@ -10,7 +10,6 @@ logger = logging.getLogger(__name__)
 
 def analyze_network(model: BayesianModel, data: pd.DataFrame) -> dict:
     results = {}
-    
     # Evaluate the model
     logger.info("Evaluating the model")
     mean_log_likelihood, std_log_likelihood = model.evaluate(data)
@@ -32,18 +31,7 @@ def main():
 
     # Prepare data
     data, categorical_columns = prepare_data()
-
-    # Select a larger subset of columns
-    selected_columns = [
-        'Subject', 'Age', 'Gender', 'CogFluidComp_Unadj', 'CogCrystalComp_Unadj', 'MMSE_Score',
-        'NEOFAC_O', 'NEOFAC_C', 'ProcSpeed_Unadj', 'CardSort_Unadj', 'PicVocab_Unadj', 'ReadEng_Unadj',
-        'FS_TotCort_GM_Vol', 'FS_SubCort_GM_Vol', 'FS_Total_GM_Vol', 'FS_Tot_WM_Vol', 'FS_BrainStem_Vol',
-        'FS_L_Hippo_Vol', 'FS_R_Hippo_Vol', 'FS_L_Amygdala_Vol', 'FS_R_Amygdala_Vol',
-        'FS_L_Caudate_Vol', 'FS_R_Caudate_Vol', 'FS_L_Putamen_Vol', 'FS_R_Putamen_Vol'
-    ]
-    data = data[selected_columns]
-    categorical_columns = [col for col in categorical_columns if col in selected_columns]
-
+    
     # Define a more complex Bayesian Network structure
     prior_edges: List[Tuple[str, str]] = [
         ('Age', 'CogFluidComp_Unadj'),

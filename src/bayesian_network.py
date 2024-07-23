@@ -97,7 +97,36 @@ class BayesianNetwork:
             json.dump(serializable_results, f, indent=2)
 
         print(f"Results written to {file_path}")
+
+    def write_summary_to_json(self, results: Dict[str, Any], filename: str = None):
+        if filename is None:
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            filename = f"summary_{timestamp}.json"
         
+        log_folder = "logs"
+        if not os.path.exists(log_folder):
+            os.makedirs(log_folder)
+        file_path = os.path.join(log_folder, filename)
+        
+        summary = {
+            "network_structure": self.explain_structure_extended(),
+            "mean_log_likelihood": results.get("mean_log_likelihood"),
+            "std_log_likelihood": results.get("std_log_likelihood"),
+            "sensitivity": results.get("sensitivity"),
+            "num_nodes": len(self.nodes),
+            "num_edges": len(self.get_edges()),
+            "categorical_variables": self.categorical_columns,
+            "continuous_variables": [node for node in self.nodes if node not in self.categorical_columns]
+        }
+        
+        if isinstance(self, HierarchicalBayesianNetwork):
+            summary["hierarchical_structure"] = self.explain_hierarchical_structure()
+        
+        with open(file_path, 'w') as f:
+            json.dump(summary, f, indent=2)
+        
+        print(f"Summary results written to {file_path}")  
+
     def get_edges(self):
         edges = []
         for node_name, node in self.nodes.items():

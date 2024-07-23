@@ -12,33 +12,24 @@ logger = logging.getLogger(__name__)
 def fit_parameters(nodes, data):
     for node_name, node in nodes.items():
         node_data = data[node_name]
-        parent_data = None
-        if node.parents:
-            parent_data = data[[parent.name for parent in node.parents]]
+        parent_data = data[[parent.name for parent in node.parents]] if node.parents else None
 
         if isinstance(node, CategoricalNode):
-            scaled_node_data = node.transform(node_data.values)
+            node.fit(node_data, parent_data)
         else:
-            scaled_node_data = node_data.values
+            # For continuous nodes, we'll use a simple linear regression
+            if parent_data is not None:
+                from sklearn.linear_model import LinearRegression
+                model = LinearRegression().fit(parent_data, node_data)
+                node.params = {
+                    'intercept': model.intercept_,
+                    'coefficients': model.coef_
+                }
+            else:
+                node.params = {
+                    'mean': node_data.mean(),
+                    'std': node_data.std()
+                }
+        
+        node.fitted = True
 
-        node.fit(scaled_node_data, parent_data)
-
-
-def preprocess_data(data: pd.DataFrame) -> pd.DataFrame:
-    data = data.copy()
-
-    numeric_columns = data.select_dtypes(include=[np.number]).columns
-    categorical_columns = data.select_dtypes(exclude=[np.number]).columns
-
-    numeric_imputer = SimpleImputer(strategy="mean")
-    categorical_imputer = SimpleImputer(strategy="most_frequent")
-
-    if len(numeric_columns) > 0:
-        data[numeric_columns] = numeric_imputer.fit_transform(data[numeric_columns])
-
-    if len(categorical_columns) > 0:
-        data[categorical_columns] = categorical_imputer.fit_transform(
-            data[categorical_columns]
-        )
-
-    return data

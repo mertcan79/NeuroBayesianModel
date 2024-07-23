@@ -46,7 +46,7 @@ def fit_bayesian_network(data_dict, prior_edges, categorical_columns):
     )
     
     # Convert pgmpy model to our BayesianNetwork format
-    model = BayesianNetwork(method='hill_climb', max_parents=3, categorical_columns=categorical_columns)
+    model = BayesianNetwork(method='hill_climb', max_parents=4, iterations= 1000, categorical_columns=categorical_columns)
     
     # Add edges from best_model and prior_edges
     for edge in best_model.edges():
@@ -82,6 +82,6 @@ def cross_validate(model_dict, data_dict, k_folds):
 @app.task
 def fit_hierarchical_bayesian_network(data_dict, levels, level_constraints, categorical_columns):
     data = pd.DataFrame(data_dict)
-    h_model = HierarchicalBayesianNetwork(levels=levels, method='hill_climb', max_parents=3, categorical_columns=categorical_columns)
+    h_model = HierarchicalBayesianNetwork(levels=levels, method='hill_climb', max_parents=4, categorical_columns=categorical_columns)
     h_model.fit(data, level_constraints=level_constraints)
     return h_model.to_dict()
