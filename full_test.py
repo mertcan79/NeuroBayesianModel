@@ -37,13 +37,37 @@ def main():
     data = data[selected_columns]
     categorical_columns = [col for col in categorical_columns if col in selected_columns]
 
-    # Define a simpler Bayesian Network structure
-    prior_edges: List[Tuple[str, str]] = [
+    # Define Bayesian Network structure with more specific connections
+    prior_edges = [
         ('Age', 'CogFluidComp_Unadj'),
         ('Age', 'CogCrystalComp_Unadj'),
+        ('Age', 'MMSE_Score'),
         ('Gender', 'CogFluidComp_Unadj'),
+        ('Gender', 'CogCrystalComp_Unadj'),
         ('MMSE_Score', 'CogFluidComp_Unadj'),
+        ('MMSE_Score', 'CogCrystalComp_Unadj'),
         ('FS_Total_GM_Vol', 'CogFluidComp_Unadj'),
+        ('FS_Total_GM_Vol', 'CogCrystalComp_Unadj'),
+        ('FS_Tot_WM_Vol', 'CogFluidComp_Unadj'),
+        ('FS_Tot_WM_Vol', 'CogCrystalComp_Unadj'),
+        ('FS_L_Hippo_Vol', 'CogFluidComp_Unadj'),
+        ('FS_R_Hippo_Vol', 'CogFluidComp_Unadj'),
+        ('FS_L_Amygdala_Vol', 'NEOFAC_O'),
+        ('FS_R_Amygdala_Vol', 'NEOFAC_O'),
+        ('FS_L_Caudate_Vol', 'ProcSpeed_Unadj'),
+        ('FS_R_Caudate_Vol', 'ProcSpeed_Unadj'),
+        ('NEOFAC_O', 'CogCrystalComp_Unadj'),
+        ('NEOFAC_C', 'CogFluidComp_Unadj'),
+        ('CogFluidComp_Unadj', 'ProcSpeed_Unadj'),
+        ('CogFluidComp_Unadj', 'CardSort_Unadj'),
+        ('CogCrystalComp_Unadj', 'PicVocab_Unadj'),
+        ('CogCrystalComp_Unadj', 'ReadEng_Unadj'),
+        ('FS_TotCort_GM_Vol', 'CogCrystalComp_Unadj'),
+        ('FS_BrainStem_Vol', 'ProcSpeed_Unadj'),
+        ('FS_L_Putamen_Vol', 'CardSort_Unadj'),
+        ('FS_R_Putamen_Vol', 'CardSort_Unadj'),
+        ('FS_L_Hippo_Vol', 'NEOFAC_O'),
+        ('FS_R_Hippo_Vol', 'NEOFAC_O'),
     ]
 
     # Create and analyze Bayesian Network
