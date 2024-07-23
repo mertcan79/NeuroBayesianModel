@@ -8,6 +8,12 @@ from src.data_processing import prepare_data
 from src.modeling import BayesianModel
 from src.bayesian_network import HierarchicalBayesianNetwork
 
+import sys
+import os
+
+# Add 'src' to the Python path
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), 'src')))
+
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
