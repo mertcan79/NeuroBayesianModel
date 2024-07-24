@@ -3,6 +3,7 @@ from typing import List, Tuple, Union
 from scipy import stats
 import pandas as pd
 
+
 class BayesianNode:
     def __init__(self, name: str):
         self.name = name
@@ -73,19 +74,44 @@ class BayesianNode:
     def transform(self, data: np.ndarray) -> np.ndarray:
         return data
 
-    def sample(self, size: int = 1, parent_values: dict = None) -> np.ndarray:
-        if self.distribution is None:
-            raise ValueError(f"Distribution for node {self.name} is not set")
-        
-        if self.is_categorical:
-            probs = list(self.distribution.values())
-            return np.random.choice(list(self.distribution.keys()), size=size, p=probs)
+    def sample(self, size: int, parent_values: pd.DataFrame = None) -> np.ndarray:
+        if parent_values is not None and not parent_values.empty:
+            if isinstance(self.distribution, tuple):
+                if len(self.distribution) == 2:  # Gaussian distribution
+                    mean, std = self.distribution
+                    mean = np.atleast_1d(mean)
+                    std = np.atleast_1d(std)
+                    if mean.shape != std.shape:
+                        # Broadcast to match shapes
+                        mean, std = np.broadcast_arrays(mean, std)
+                    return np.random.normal(mean, np.abs(std), size=(size, mean.shape[0])).squeeze()
+                elif len(self.distribution) > 2:  # Linear model
+                    intercept, *coefficients = self.distribution
+                    parent_values_array = parent_values.values
+                    mean = intercept + np.sum(parent_values_array * coefficients, axis=1)
+                    return np.random.normal(mean, scale=1.0, size=size)  # Assuming unit variance
+            elif isinstance(self.distribution, stats.rv_continuous):
+                return self.distribution.rvs(size=size)
+            elif isinstance(self.distribution, stats.rv_discrete):
+                return self.distribution.rvs(size=size)
+            elif callable(self.distribution):
+                return self.distribution(parent_values, size)
+            else:
+                raise ValueError(f"Unsupported distribution type for node {self.name}")
         else:
-            mean, std = self.distribution
-            if parent_values:
-                parent_array = np.array([1] + [parent_values[p.name] for p in self.parents])
-                mean = np.dot(mean, parent_array)
-            return np.random.normal(mean, std, size=size)
+            if isinstance(self.distribution, tuple):
+                if len(self.distribution) == 2:  # Gaussian distribution
+                    mean, std = self.distribution
+                    std = abs(std)  # Ensure std is non-negative
+                    return np.random.normal(mean, std, size=size)
+            elif isinstance(self.distribution, stats.rv_continuous):
+                return self.distribution.rvs(size=size)
+            elif isinstance(self.distribution, stats.rv_discrete):
+                return self.distribution.rvs(size=size)
+            elif callable(self.distribution):
+                return self.distribution(size=size)
+            else:
+                raise ValueError(f"Unsupported distribution type for node {self.name}")
 
     def log_probability(self, value: Union[float, str], parent_values: Tuple = None) -> float:
         if self.distribution is None:

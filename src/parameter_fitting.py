@@ -3,6 +3,7 @@ import pandas as pd
 from typing import Dict
 from scipy import stats
 import logging
+from scipy.stats import norm, gamma, dirichlet
 
 from .bayesian_node import BayesianNode, CategoricalNode
 

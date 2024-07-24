@@ -9,7 +9,7 @@ from .bayesian_node import BayesianNode, CategoricalNode
 logger = logging.getLogger(__name__)
 
 
-def learn_structure(data: pd.DataFrame, method: str = 'hill_climb', max_parents: int = 2, iterations: int = 300, prior_edges: List[tuple] = None) -> Dict[str, BayesianNode]:
+def learn_structure(data: pd.DataFrame, method: str = 'k2', max_parents: int = 2, iterations: int = 300, prior_edges: List[tuple] = None) -> Dict[str, BayesianNode]:
     """
     Learn the structure of a Bayesian Network from data.
     
@@ -114,40 +114,6 @@ def k2_algorithm(
 
     return nodes
 
-def hill_climb_algorithm(
-    data: pd.DataFrame,
-    max_parents: int,
-    prior_edges: Dict[Tuple[str, str], float] = None,
-    allowed_connections: List[Tuple[str, str]] = None,
-) -> Dict[str, BayesianNode]:
-    hc = HillClimbSearch(data)
-
-    def modified_bic_score(model):
-        score = BicScore(data).score(model)
-        if allowed_connections:
-            for edge in model.edges():
-                if edge not in allowed_connections:
-                    return -np.inf
-        return score
-
-    model = hc.estimate(scoring_method=modified_bic_score, max_indegree=max_parents)
-
-    nodes = {node: BayesianNode(node) for node in data.columns}
-
-    for edge in model.edges():
-        parent, child = edge
-        nodes[child].parents.append(nodes[parent])
-        nodes[parent].children.append(nodes[child])
-
-    # Incorporate prior edges if provided
-    if prior_edges:
-        for (parent, child), probability in prior_edges.items():
-            if probability > 0.5 and nodes[parent] not in nodes[child].parents:
-                if allowed_connections and (parent, child) in allowed_connections:
-                    nodes[child].parents.append(nodes[parent])
-                    nodes[parent].children.append(nodes[child])
-
-    return nodes
 
 def score_node(
     data: pd.DataFrame,
