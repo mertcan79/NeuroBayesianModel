@@ -13,6 +13,14 @@ class BayesianNode:
         self.is_categorical = False
         self.categories = None
 
+    def __eq__(self, other):
+        if isinstance(other, BayesianNode):
+            return self.name == other.name
+        return False
+
+    def __hash__(self):
+        return hash(self.name)
+
     def add_parent(self, parent: 'BayesianNode'):
         if parent not in self.parents:
             self.parents.append(parent)
@@ -39,29 +47,30 @@ class BayesianNode:
 
     def fit_categorical(self, node_data, parent_data=None):
         if parent_data is None or parent_data.empty:
-            # If no parents, just compute probabilities
             value_counts = node_data.value_counts(normalize=True)
             self.distribution = value_counts.to_dict()
         else:
-            # If parents exist, compute conditional probabilities
             joint_counts = pd.crosstab(parent_data.apply(tuple, axis=1), node_data)
             self.distribution = (joint_counts / joint_counts.sum(axis=1)).to_dict()
 
-    def fit_continuous(self, node_data, parent_data=None):
-        if parent_data is None or parent_data.empty:
-            # If no parents, fit a normal distribution
-            mean, std = stats.norm.fit(node_data)
-            self.distribution = (mean, std)
+    def fit_continuous(self, node_data, parent_data):
+        if parent_data is not None and len(parent_data.columns) > 0:
+            X = parent_data.values
+            y = node_data.values
+            print(f"X shape: {X.shape}, y shape: {y.shape}")
+            print(f"X columns: {parent_data.columns}")
+            print(f"y name: {node_data.name}")
+            try:
+                X = np.column_stack((np.ones(X.shape[0]), X))
+                model, residuals, rank, s = np.linalg.lstsq(X, y, rcond=None)
+                self.distribution = (model, np.std(residuals))
+            except Exception as e:
+                print(f"Error in regression: {str(e)}")
+                raise
         else:
-            # If parents exist, fit a linear regression
-            X = parent_data
-            y = node_data
-            model = stats.linregress(X, y)
-            self.distribution = model
+            self.distribution = (np.mean(node_data), np.std(node_data))
 
     def transform(self, data: np.ndarray) -> np.ndarray:
-        # This method should be implemented based on your specific needs
-        # For now, we'll just return the data as-is
         return data
 
     def sample(self, size: int = 1, parent_values: dict = None) -> np.ndarray:
@@ -69,10 +78,13 @@ class BayesianNode:
             raise ValueError(f"Distribution for node {self.name} is not set")
         
         if self.is_categorical:
-            return np.random.choice(self.categories, size=size, p=self.distribution)
+            probs = list(self.distribution.values())
+            return np.random.choice(list(self.distribution.keys()), size=size, p=probs)
         else:
-            # Assuming a Gaussian distribution for continuous variables
             mean, std = self.distribution
+            if parent_values:
+                parent_array = np.array([1] + [parent_values[p.name] for p in self.parents])
+                mean = np.dot(mean, parent_array)
             return np.random.normal(mean, std, size=size)
 
     def log_probability(self, value: Union[float, str], parent_values: Tuple = None) -> float:
@@ -80,14 +92,15 @@ class BayesianNode:
             raise ValueError(f"Distribution for node {self.name} is not set")
         
         if self.is_categorical:
-            if value not in self.categories:
+            if value not in self.distribution:
                 return float('-inf')
-            index = self.categories.index(value)
-            return np.log(self.distribution[index])
+            return np.log(self.distribution[value])
         else:
-            # Assuming a Gaussian distribution for continuous variables
             mean, std = self.distribution
-            return -0.5 * ((value - mean) / std) ** 2 - np.log(std * np.sqrt(2 * np.pi))
+            if parent_values:
+                parent_array = np.array([1] + list(parent_values))
+                mean = np.dot(mean, parent_array)
+            return stats.norm.logpdf(value, mean, std)
 
     def __repr__(self):
         return f"BayesianNode(name={self.name}, parents={[p.name for p in self.parents]}, children={[c.name for c in self.children]})"

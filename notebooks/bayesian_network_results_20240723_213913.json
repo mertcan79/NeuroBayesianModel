@@ -1,0 +1,145 @@
+{
+  "network_structure": {
+    "nodes": [
+      "FS_Total_GM_Vol",
+      "FS_Tot_WM_Vol",
+      "FS_L_Hippo_Vol",
+      "FS_R_Hippo_Vol",
+      "FS_L_Amygdala_Vol",
+      "FS_R_Amygdala_Vol",
+      "Age",
+      "Gender",
+      "CogFluidComp_Unadj",
+      "CogCrystalComp_Unadj",
+      "MMSE_Score",
+      "NEOFAC_O",
+      "NEOFAC_C"
+    ],
+    "edges": [
+      [
+        "FS_Total_GM_Vol",
+        "CogFluidComp_Unadj"
+      ],
+      [
+        "FS_L_Hippo_Vol",
+        "CogFluidComp_Unadj"
+      ],
+      [
+        "FS_Total_GM_Vol",
+        "CogCrystalComp_Unadj"
+      ],
+      [
+        "Age",
+        "CogCrystalComp_Unadj"
+      ]
+    ],
+    "FS_Total_GM_Vol": {
+      "parents": [],
+      "parameters": null,
+      "distribution": "(-0.0493680304751006, 1.0088600529633258)"
+    },
+    "FS_Tot_WM_Vol": {
+      "parents": [],
+      "parameters": null,
+      "distribution": "(-0.10018982695240783, 0.9650019259574558)"
+    },
+    "FS_L_Hippo_Vol": {
+      "parents": [],
+      "parameters": null,
+      "distribution": "(-0.03822659972777986, 1.194029612914668)"
+    },
+    "FS_R_Hippo_Vol": {
+      "parents": [],
+      "parameters": null,
+      "distribution": "(-0.044108271826220014, 1.0812777424739242)"
+    },
+    "FS_L_Amygdala_Vol": {
+      "parents": [],
+      "parameters": null,
+      "distribution": "(-0.0857288279357955, 0.9898688258618746)"
+    },
+    "FS_R_Amygdala_Vol": {
+      "parents": [],
+      "parameters": null,
+      "distribution": "(-0.12402322546991225, 1.0317573409592755)"
+    },
+    "Age": {
+      "parents": [],
+      "parameters": null,
+      "distribution": "(1.2333333333333334, 0.7340905181848414)"
+    },
+    "Gender": {
+      "parents": [],
+      "parameters": null,
+      "distribution": "(0.4266666666666667, 0.49459298642643756)"
+    },
+    "CogFluidComp_Unadj": {
+      "parents": [
+        "FS_Total_GM_Vol",
+        "FS_L_Hippo_Vol"
+      ],
+      "parameters": null,
+      "distribution": "(array([-0.07213188,  0.20948592,  0.00681416]), 0.0)"
+    },
+    "CogCrystalComp_Unadj": {
+      "parents": [
+        "FS_Total_GM_Vol",
+        "Age"
+      ],
+      "parameters": null,
+      "distribution": "(array([-0.2109    ,  0.31885832,  0.17478174]), 0.0)"
+    },
+    "MMSE_Score": {
+      "parents": [],
+      "parameters": null,
+      "distribution": "(28.993333333333332, 1.0099284903177819)"
+    },
+    "NEOFAC_O": {
+      "parents": [],
+      "parameters": null,
+      "distribution": "(-0.0055906508791937586, 0.9501044890521998)"
+    },
+    "NEOFAC_C": {
+      "parents": [],
+      "parameters": null,
+      "distribution": "(-0.07524350931569611, 0.9626486152145997)"
+    }
+  },
+  "sensitivity": {
+    "CogFluidComp_Unadj": {
+      "FS_Total_GM_Vol": 2113419714.2021837,
+      "FS_Tot_WM_Vol": 965001925.9574559,
+      "FS_L_Hippo_Vol": 81363084.84813607,
+      "FS_R_Hippo_Vol": 1081277742.4739242,
+      "FS_L_Amygdala_Vol": 989868825.8618747,
+      "FS_R_Amygdala_Vol": 1031757340.9592756,
+      "Age": 734090518.1848414,
+      "Gender": 494592986.42643756,
+      "CogCrystalComp_Unadj": 0.1,
+      "MMSE_Score": 1009928490.3177818,
+      "NEOFAC_O": 950104489.0521997,
+      "NEOFAC_C": 962648615.2145996
+    },
+    "CogCrystalComp_Unadj": {
+      "FS_Total_GM_Vol": 3216834197.31423,
+      "FS_Tot_WM_Vol": 965001925.9574559,
+      "FS_L_Hippo_Vol": 1194029612.9146678,
+      "FS_R_Hippo_Vol": 1081277742.4739242,
+      "FS_L_Amygdala_Vol": 989868825.8618747,
+      "FS_R_Amygdala_Vol": 1031757340.9592756,
+      "Age": 1283056189.095522,
+      "Gender": 494592986.42643756,
+      "CogFluidComp_Unadj": 0.1,
+      "MMSE_Score": 1009928490.3177818,
+      "NEOFAC_O": 950104489.0521997,
+      "NEOFAC_C": 962648615.2145996
+    }
+  },
+  "insights": [
+    "The top 3 predictors of CogFluidComp_Unadj are: FS_Total_GM_Vol (sensitivity: 2113419714.202), FS_R_Hippo_Vol (sensitivity: 1081277742.474), FS_R_Amygdala_Vol (sensitivity: 1031757340.959)",
+    "The top 3 predictors of CogCrystalComp_Unadj are: FS_Total_GM_Vol (sensitivity: 3216834197.314), Age (sensitivity: 1283056189.096), FS_L_Hippo_Vol (sensitivity: 1194029612.915)",
+    "Age directly influences: CogFluidComp_Unadj, CogCrystalComp_Unadj",
+    "Gender directly influences: CogFluidComp_Unadj, CogCrystalComp_Unadj",
+    "Key brain structure-cognition relationships: FS_Total_GM_Vol \u2192 CogFluidComp_Unadj, FS_L_Hippo_Vol \u2192 CogFluidComp_Unadj, FS_Total_GM_Vol \u2192 CogCrystalComp_Unadj"
+  ]
+}

@@ -1,28 +1,33 @@
 import logging
-import json
-from datetime import datetime
-from typing import List, Tuple
+import os
+import sys
+from dotenv import load_dotenv
 import pandas as pd
-import numpy as np
 from src.data_processing import prepare_data
 from src.modeling import BayesianModel
 from src.bayesian_network import HierarchicalBayesianNetwork
 
-import sys
-from dotenv import load_dotenv
-import os
-
 load_dotenv()
 
-# Determine which path to use based on ENVIRONMENT variable
-environment = os.getenv('ENVIRONMENT', 'local')  # Default to 'local' if ENVIRONMENT is not set
+# Determine environment and data path
+environment = os.getenv('ENVIRONMENT', 'local')
+data_path = os.getenv('LOCAL_DATA_PATH') if environment == 'local' else os.getenv('CLOUD_DATA_PATH')
 
-if environment == 'local':
-    data_path = os.getenv('LOCAL_DATA_PATH')
-elif environment == 'cloud':
-    data_path = os.getenv('CLOUD_DATA_PATH')
-else:
-    raise ValueError(f"Unknown environment: {environment}")
+# File paths
+behavioral_path = os.path.join(data_path, 'connectome_behavioral.csv')
+hcp_path = os.path.join(data_path, 'hcp_freesurfer.csv')
+
+# Feature selections
+behavioral_features = [
+    'Subject', 'Age', 'Gender', 'CogFluidComp_Unadj', 'CogCrystalComp_Unadj', 'MMSE_Score',
+    'NEOFAC_O', 'NEOFAC_C', 'ProcSpeed_Unadj', 'CardSort_Unadj', 'PicVocab_Unadj', 'ReadEng_Unadj'
+]
+hcp_features = [
+    'Subject', 'FS_TotCort_GM_Vol', 'FS_SubCort_GM_Vol', 'FS_Total_GM_Vol', 'FS_Tot_WM_Vol', 'FS_BrainStem_Vol',
+    'FS_L_Hippo_Vol', 'FS_R_Hippo_Vol', 'FS_L_Amygdala_Vol', 'FS_R_Amygdala_Vol',
+    'FS_L_Caudate_Vol', 'FS_R_Caudate_Vol', 'FS_L_Putamen_Vol', 'FS_R_Putamen_Vol',
+]
+categorical_columns_hcp = ['Gender', 'MMSE_Score', 'Age']
 
 # Add 'src' to the Python path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), 'src')))
@@ -30,31 +35,18 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), 'src'
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-def analyze_network(model: BayesianModel, data: pd.DataFrame) -> dict:
-    results = {}
-    
-    # Evaluate the model
-    logger.info("Evaluating the model")
-    mean_log_likelihood, std_log_likelihood = model.evaluate(data)
-    results["mean_log_likelihood"] = mean_log_likelihood
-    results["std_log_likelihood"] = std_log_likelihood
-    
-    # Compute sensitivity
-    logger.info("Computing sensitivity")
-    target_nodes = ["CogFluidComp_Unadj", "CogCrystalComp_Unadj"]
-    sensitivity = {}
-    for target_node in target_nodes:
-        sensitivity[target_node] = model.compute_sensitivity(target_node)
-    results["sensitivity"] = sensitivity
-    
-    return results
-
 def main():
     logger.info("Starting Bayesian Network analysis")
 
     # Prepare data
     logger.info("Preparing data...")
-    data, categorical_columns, categories = prepare_data()
+    data, categorical_columns, categories = prepare_data(
+        behavioral_path=behavioral_path,
+        hcp_path=hcp_path,
+        behavioral_features=behavioral_features,
+        hcp_features=hcp_features,
+        categorical_columns=categorical_columns_hcp
+    )
 
     # Define prior edges
     prior_edges = [
