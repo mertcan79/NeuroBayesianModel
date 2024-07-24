@@ -7,12 +7,12 @@ import pandas as pd
 from bayesian_network import BayesianNetwork, HierarchicalBayesianNetwork
 from bayesian_node import BayesianNode, CategoricalNode
 
-def explain_structure(self):
-    return {"nodes": list(self.nodes.keys()), "edges": self.get_edges()}
+def explain_structure():
+    return {"nodes": list(nodes.keys()), "edges": get_edges()}
 
-def explain_structure_extended(self):
-    structure = {"nodes": list(self.nodes.keys()), "edges": self.get_edges()}
-    for node_name, node in self.nodes.items():
+def explain_structure_extended():
+    structure = {"nodes": list(nodes.keys()), "edges": get_edges()}
+    for node_name, node in nodes.items():
         structure[node_name] = {
             "parents": [parent.name for parent in node.parents],
             "children": [child.name for child in node.children],
@@ -24,9 +24,9 @@ def explain_structure_extended(self):
 
     return structure
 
-def get_unexpected_insights(self):
+def get_unexpected_insights():
     insights = []
-    sensitivity = self.compute_sensitivity("CogFluidComp_Unadj")
+    sensitivity = compute_sensitivity("CogFluidComp_Unadj")
 
     if sensitivity["FS_R_Amygdala_Vol"] > sensitivity["FS_L_Amygdala_Vol"]:
         insights.append(
@@ -51,9 +51,9 @@ def get_unexpected_insights(self):
 
     return insights
 
-def generate_actionable_insights(self):
+def generate_actionable_insights():
     insights = []
-    sensitivity = self.compute_sensitivity("CogFluidComp_Unadj")
+    sensitivity = compute_sensitivity("CogFluidComp_Unadj")
 
     if sensitivity["FS_L_Hippo_Vol"] > 0.1:
         insights.append(
@@ -72,21 +72,21 @@ def generate_actionable_insights(self):
 
     return insights
 
-def analyze_personality_cognition_relationship(self):
+def analyze_personality_cognition_relationship():
     personality_traits = ["NEOFAC_O", "NEOFAC_C"]
     cognitive_measures = ["CogFluidComp_Unadj", "CogCrystalComp_Unadj"]
 
     relationships = {}
     for trait in personality_traits:
         for measure in cognitive_measures:
-            correlation = np.corrcoef(self.data[trait], self.data[measure])[0, 1]
+            correlation = np.corrcoef(data[trait], data[measure])[0, 1]
             relationships[f"{trait}-{measure}"] = correlation
 
     return relationships
 
-def analyze_age_dependent_relationships(self):
-    young_data = self.data[self.data["Age"] < 30]
-    old_data = self.data[self.data["Age"] >= 30]
+def analyze_age_dependent_relationships():
+    young_data = data[data["Age"] < 30]
+    old_data = data[data["Age"] >= 30]
 
     young_model = BayesianNetwork()
     old_model = BayesianNetwork()
@@ -103,9 +103,9 @@ def analyze_age_dependent_relationships(self):
 
     return age_differences
 
-def get_practical_implications(self):
+def get_practical_implications():
     implications = []
-    sensitivity = self.compute_sensitivity("CogFluidComp_Unadj")
+    sensitivity = compute_sensitivity("CogFluidComp_Unadj")
 
     if sensitivity["FS_Total_GM_Vol"] > 0.1:
         implications.append(
@@ -129,13 +129,13 @@ def get_practical_implications(self):
 
     return implications
 
-def perform_age_stratified_analysis(self):
+def perform_age_stratified_analysis():
     age_groups = {"Young": (0, 30), "Middle": (31, 60), "Older": (61, 100)}
 
     results = {}
     for group, (min_age, max_age) in age_groups.items():
-        group_data = self.data[
-            (self.data["Age"] >= min_age) & (self.data["Age"] <= max_age)
+        group_data = data[
+            (data["Age"] >= min_age) & (data["Age"] <= max_age)
         ]
         group_model = BayesianNetwork()
         group_model.fit(group_data)
@@ -146,9 +146,9 @@ def perform_age_stratified_analysis(self):
 
     return results
 
-def explain_unexpected_findings(self):
+def explain_unexpected_findings():
     explanations = []
-    sensitivity = self.compute_sensitivity("CogFluidComp_Unadj")
+    sensitivity = compute_sensitivity("CogFluidComp_Unadj")
 
     if sensitivity["FS_BrainStem_Vol"] < -0.1:
         explanations.append(
@@ -165,7 +165,7 @@ def explain_unexpected_findings(self):
 
     return explanations
 
-def enforce_expected_connections(self):
+def enforce_expected_connections():
     expected_connections = [
         ("FS_L_Hippo_Vol", "CogFluidComp_Unadj"),
         ("FS_R_Hippo_Vol", "CogFluidComp_Unadj"),
@@ -174,12 +174,12 @@ def enforce_expected_connections(self):
         ("NEOFAC_C", "CogFluidComp_Unadj"),
     ]
     for parent, child in expected_connections:
-        if child not in self.nodes[parent].children:
-            self.add_edge(parent, child)
+        if child not in nodes[parent].children:
+            add_edge(parent, child)
 
-    self.fit(self.data)  # Refit the model with new connections
+    fit(data)  # Refit the model with new connections
 
-def analyze_brain_stem_relationship(self):
+def analyze_brain_stem_relationship():
     brain_stem_correlations = {}
     for measure in [
         "CogFluidComp_Unadj",
@@ -187,35 +187,35 @@ def analyze_brain_stem_relationship(self):
         "ProcSpeed_Unadj",
     ]:
         correlation = np.corrcoef(
-            self.data["FS_BrainStem_Vol"], self.data[measure]
+            data["FS_BrainStem_Vol"], data[measure]
         )[0, 1]
         brain_stem_correlations[measure] = correlation
     return brain_stem_correlations
 
-def get_personalized_recommendations(self, individual_data):
+def get_personalized_recommendations( individual_data):
     recommendations = []
 
-    if individual_data["FS_Total_GM_Vol"] < self.data["FS_Total_GM_Vol"].mean():
+    if individual_data["FS_Total_GM_Vol"] < data["FS_Total_GM_Vol"].mean():
         recommendations.append(
             "Focus on activities that promote gray matter preservation, such as learning a new language or musical instrument."
         )
 
-    if individual_data["FS_Tot_WM_Vol"] < self.data["FS_Tot_WM_Vol"].mean():
+    if individual_data["FS_Tot_WM_Vol"] < data["FS_Tot_WM_Vol"].mean():
         recommendations.append(
             "Engage in tasks that challenge white matter integrity, like complex problem-solving or strategic games."
         )
 
-    if individual_data["NEOFAC_O"] > self.data["NEOFAC_O"].mean():
+    if individual_data["NEOFAC_O"] > data["NEOFAC_O"].mean():
         recommendations.append(
             "Leverage your openness to experience with diverse and novel cognitive challenges."
         )
 
     return recommendations
 
-def get_clinical_insights(self):
+def get_clinical_insights():
     insights = []
-    fluid_sensitivity = self.compute_sensitivity("CogFluidComp_Unadj")
-    crystal_sensitivity = self.compute_sensitivity("CogCrystalComp_Unadj")
+    fluid_sensitivity = compute_sensitivity("CogFluidComp_Unadj")
+    crystal_sensitivity = compute_sensitivity("CogCrystalComp_Unadj")
 
     for feature, value in fluid_sensitivity.items():
         if abs(value) > 0.1:
@@ -231,10 +231,10 @@ def get_clinical_insights(self):
 
     return insights
 
-def get_clinical_implications(self):
+def get_clinical_implications():
     implications = []
-    sensitivity_fluid = self.compute_sensitivity("CogFluidComp_Unadj")
-    sensitivity_crystal = self.compute_sensitivity("CogCrystalComp_Unadj")
+    sensitivity_fluid = compute_sensitivity("CogFluidComp_Unadj")
+    sensitivity_crystal = compute_sensitivity("CogCrystalComp_Unadj")
 
     for feature, value in sensitivity_fluid.items():
         if abs(value) > 0.1:
@@ -255,10 +255,10 @@ def get_clinical_implications(self):
 
     return implications
 
-def get_novel_insights(self):
+def get_novel_insights():
     insights = []
-    sensitivity_fluid = self.compute_sensitivity("CogFluidComp_Unadj")
-    sensitivity_crystal = self.compute_sensitivity("CogCrystalComp_Unadj")
+    sensitivity_fluid = compute_sensitivity("CogFluidComp_Unadj")
+    sensitivity_crystal = compute_sensitivity("CogCrystalComp_Unadj")
 
     # Compare brain structure influences
     brain_structures = [f for f in sensitivity_fluid.keys() if f.startswith("FS_")]
@@ -286,16 +286,16 @@ def get_novel_insights(self):
 
     return insights
 
-def get_age_specific_insights(self) -> List[str]:
-    if self.data is None:
+def get_age_specific_insights() -> List[str]:
+    if data is None:
         return ["No data available for age-specific insights."]
 
     insights = []
-    young_data = self.data[self.data["Age"] < self.data["Age"].median()]
-    old_data = self.data[self.data["Age"] >= self.data["Age"].median()]
+    young_data = data[data["Age"] < data["Age"].median()]
+    old_data = data[data["Age"] >= data["Age"].median()]
 
-    young_model = BayesianNetwork(nodes=self.nodes, edges=self.edges)
-    old_model = BayesianNetwork(nodes=self.nodes, edges=self.edges)
+    young_model = BayesianNetwork()
+    old_model = BayesianNetwork()
 
     young_model.fit(young_data)
     old_model.fit(old_data)
@@ -318,25 +318,25 @@ def get_age_specific_insights(self) -> List[str]:
 
     return insights
 
-def get_gender_specific_insights(self):
-    if self.data is None:
+def get_gender_specific_insights():
+    if data is None:
         return ["No data available for gender-specific insights."]
 
     insights = []
-    male_data = self.data[self.data["Gender"] == 0]  # Assuming 0 is male
-    female_data = self.data[self.data["Gender"] == 1]  # Assuming 1 is female
+    male_data = data[data["Gender"] == 0]  # Assuming 0 is male
+    female_data = data[data["Gender"] == 1]  # Assuming 1 is female
 
     male_model = BayesianNetwork(
-        method=self.method,
-        max_parents=self.max_parents,
-        iterations=self.iterations,
-        categorical_columns=self.categorical_columns,
+        method=method,
+        max_parents=max_parents,
+        iterations=iterations,
+        categorical_columns=categorical_columns,
     )
     female_model = BayesianNetwork(
-        method=self.method,
-        max_parents=self.max_parents,
-        iterations=self.iterations,
-        categorical_columns=self.categorical_columns,
+        method=method,
+        max_parents=max_parents,
+        iterations=iterations,
+        categorical_columns=categorical_columns,
     )
 
     male_model.fit(male_data)
@@ -358,9 +358,9 @@ def get_gender_specific_insights(self):
 
     return insights
 
-def summarize_key_findings(self) -> str:
-    relationships = self.get_key_relationships()
-    insights = self.get_novel_insights()
+def summarize_key_findings() -> str:
+    relationships = get_key_relationships()
+    insights = get_novel_insights()
 
     summary = f"Our Bayesian Network model identified {len(relationships)} strong relationships between brain structures and cognitive functions. "
     summary += f"Key findings include:\n"
@@ -370,11 +370,6 @@ def summarize_key_findings(self) -> str:
     summary += f"4. {insights[0] if insights else 'No unexpected influences were found.'}\n"
 
     return summary
-
-def analyze_brain_stem_relationship(relationships: Dict[str, float]) -> Dict[str, float]:
-    if not relationships:
-        return {}
-    return {k: round(v, 3) for k, v in relationships.items()}
 
 def summarize_personality_cognition(relationships: Dict[str, float]) -> Dict[str, float]:
     if not relationships:
@@ -397,11 +392,11 @@ def summarize_age_dependent_changes(changes: Dict[str, float]) -> Dict[str, floa
     return dict(sorted(significant_changes.items(), key=lambda x: abs(x[1]), reverse=True)[:5])
 
 
-def get_key_relationships(self) -> List[Dict[str, Any]]:
+def get_key_relationships() -> List[Dict[str, Any]]:
     relationships = []
-    for node_name, node in self.nodes.items():
+    for node_name, node in nodes.items():
         for parent in node.parents:
-            strength = abs(self.compute_edge_strength(parent.name, node_name))
+            strength = abs(compute_edge_strength(parent.name, node_name))
             relationships.append(
                 {"parent": parent.name, "child": node_name, "strength": strength}
             )
@@ -418,20 +413,9 @@ def get_key_relationships(self) -> List[Dict[str, Any]]:
         for r in top_10_percent
     ]
 
-def get_novel_insights(self) -> List[str]:
-    insights = []
-    sensitivity = self.compute_sensitivity("CogFluidComp_Unadj")
-    top_factors = sorted(sensitivity.items(), key=lambda x: x[1], reverse=True)[:3]
-    for factor, value in top_factors:
-        insights.append(
-            f"Unexpectedly high influence of {factor} on cognitive fluid composite (sensitivity: {value:.2f})"
-        )
-    return insights
-
-
-def explain_key_relationships(self):
+def explain_key_relationships():
     explanations = []
-    relationships = self.get_key_relationships()
+    relationships = get_key_relationships()
     for rel in relationships:
         if (
             rel["parent"] == "FS_Total_GM_Vol"

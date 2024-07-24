@@ -3,7 +3,7 @@ import numpy as np
 import logging
 from typing import List, Callable, Tuple, Dict, Any
 from scipy.special import logsumexp
-
+from bayesian_node import BayesianNode, CategoricalNode
 from .bayesian_network import BayesianNetwork
 
 logger = logging.getLogger(__name__)
@@ -44,9 +44,6 @@ class BayesianModel:
         """Compute sensitivity of the target node to changes in other nodes."""
         return self.network.compute_sensitivity(target_node, num_samples=num_samples)
 
-    def fit(self, data: pd.DataFrame):
-        self._learn_structure(data)
-        self._fit_parameters(data)
 
     def fit_transform(self, data: pd.DataFrame) -> pd.DataFrame:
         self.fit(data)

@@ -12,7 +12,6 @@ from scipy import stats
 from scipy.stats import norm, multivariate_normal
 import networkx as nx
 import statsmodels.api as sm
-from scipy.stats import multivariate_normal
 
 from .bayesian_node import BayesianNode, CategoricalNode
 from .structure_learning import learn_structure

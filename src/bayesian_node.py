@@ -184,12 +184,13 @@ class BayesianNode:
         return f"BayesianNode(name={self.name}, parents={[p.name for p in self.parents]}, children={[c.name for c in self.children]})"
 
 class CategoricalNode(BayesianNode):
-    def __init__(self, name, categories):
+    def __init__(self, name, categories, parameters):
         super().__init__(name)
         self.categories = list(range(len(categories)))  # Use integer codes
         self.original_categories = categories
         self.distribution = stats.multinomial
         self.cpt = None
+        self.parameters = parameters
 
     def to_dict(self):
         base_dict = super().to_dict()
@@ -199,14 +200,6 @@ class CategoricalNode(BayesianNode):
             'cpt': self.cpt.tolist() if self.cpt is not None else None
         })
         return base_dict
-
-    @classmethod
-    def from_dict(cls, data):
-        node = cls(data['name'], data['original_categories'])
-        node.parameteres = data['params']
-        node.categories = data['categories']
-        node.cpt = np.array(data['cpt']) if data['cpt'] is not None else None
-        return node
 
     def fit(self, data, parent_data=None):
         if parent_data is None or len(parent_data) == 0:

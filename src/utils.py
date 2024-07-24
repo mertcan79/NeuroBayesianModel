@@ -9,9 +9,14 @@ from .bayesian_network import BayesianNetwork
 from typing import Dict, Any, List, Tuple
 from .insights import (
     explain_structure_extended, summarize_key_findings,
-    summarize_personality_cognition, summarize_age_dependent_changes, get_key_relationships
-)
+    summarize_personality_cognition, summarize_age_dependent_changes, get_key_relationships,
+    perform_age_stratified_analysis, get_practical_implications, get_age_specific_insights,
+    get_gender_specific_insights, explain_key_relationships, get_unexpected_insights, get_personalized_recommendations,
+    analyze_brain_stem_relationship, generate_actionable_insights, analyze_personality_cognition_relationship, analyze_age_dependent_relationships,
+    explain_unexpected_findings, get_novel_insights, get_clinical_implications, get_performance_metrics
 
+)
+#from .bayesian_network import get_confidence_intervals, get_performance_metrics, get_intervention_simulations
 
 def write_results_to_json(results: Dict[str, Any], filename: str = None):
     if filename is None:
@@ -40,8 +45,8 @@ def write_results_to_json(results: Dict[str, Any], filename: str = None):
             return obj
 
     
-    if isinstance(HierarchicalBayesianNetwork):
-        results["hierarchical_structure"] = explain_hierarchical_structure()
+    #if isinstance(HierarchicalBayesianNetwork):
+    #    results["hierarchical_structure"] = explain_hierarchical_structure()
     
     # Add key relationships and insights
     results["key_relationships"] = get_key_relationships()
