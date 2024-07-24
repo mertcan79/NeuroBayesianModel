@@ -122,15 +122,30 @@ class BayesianNetwork:
         results["performance_metrics"] = self.get_performance_metrics()
         results["unexpected_insights"] = self.get_unexpected_insights()
 
-        # Example of personalized recommendations
-        sample_individual = {
-            'Age': 65,
-            'FS_L_Hippo_Vol': 3500,  # Example value
-            'NEOFAC_O': 4.2  # Example value
+        # Example individual for personalized recommendations
+        example_individual = {
+            'FS_Total_GM_Vol': self.data['FS_Total_GM_Vol'].mean(),
+            'FS_Tot_WM_Vol': self.data['FS_Tot_WM_Vol'].mean(),
+            'NEOFAC_O': self.data['NEOFAC_O'].mean()
         }
-        results["sample_personalized_recommendations"] = self.get_personalized_recommendations(sample_individual)
+        results["personalized_recommendations_example"] = self.get_personalized_recommendations(example_individual)
         
+        results["confidence_intervals"] = self.get_confidence_intervals()
         
+        results["brain_stem_relationships"] = self.analyze_brain_stem_relationship()
+        results["actionable_insights"] = self.generate_actionable_insights()
+        results["personality_cognition_relationships"] = self.analyze_personality_cognition_relationship()
+        results["age_dependent_relationships"] = self.analyze_age_dependent_relationships()
+        
+        # Enforce expected connections and refit if necessary
+        self.enforce_expected_connections()
+        results["updated_network_structure"] = self.explain_structure_extended()
+
+        results["practical_implications"] = self.get_practical_implications()
+        results["age_stratified_analysis"] = self.perform_age_stratified_analysis()
+        results["unexpected_findings_explanations"] = self.explain_unexpected_findings()
+        
+
         # Potential applications for cognitive training programs
         results["cognitive_training_applications"] = [
             "Personalized gray matter preservation exercises based on individual brain structure volumes",
@@ -157,6 +172,27 @@ class BayesianNetwork:
             os.makedirs(log_folder)
         file_path = os.path.join(log_folder, filename)
         
+        def _summarize_brain_stem_relationships(self, relationships):
+            if not relationships:
+                return "No brain stem relationship data available."
+            return {k: round(v, 3) for k, v in relationships.items()}
+
+        def _summarize_actionable_insights(self, insights):
+            if not insights:
+                return "No actionable insights available."
+            return insights[:3] if len(insights) > 3 else insights
+
+        def _summarize_personality_cognition(self, relationships):
+            if not relationships:
+                return "No personality-cognition relationship data available."
+            return {k: round(v, 3) for k, v in sorted(relationships.items(), key=lambda x: abs(x[1]), reverse=True)[:3]}
+
+        def _summarize_age_dependent_changes(self, changes):
+            if not changes:
+                return "No age-dependent relationship data available."
+            significant_changes = {k: round(v, 3) for k, v in changes.items() if abs(v) > 0.1}
+            return dict(sorted(significant_changes.items(), key=lambda x: abs(x[1]), reverse=True)[:5])
+
         summary = {
             "network_structure": self.explain_structure_extended(),
             "mean_log_likelihood": results.get("mean_log_likelihood"),
@@ -172,6 +208,13 @@ class BayesianNetwork:
             "non_technical_interpretation": self.interpret_results_non_technical()
         }
         
+        summary.update({
+            "key_brain_stem_relationships": self._summarize_brain_stem_relationships(results.get("brain_stem_relationships")),
+            "top_actionable_insights": self._summarize_actionable_insights(results.get("actionable_insights")),
+            "key_personality_cognition_findings": self._summarize_personality_cognition(results.get("personality_cognition_relationships")),
+            "significant_age_dependent_changes": self._summarize_age_dependent_changes(results.get("age_dependent_relationships")),
+        })
+
         if isinstance(self, HierarchicalBayesianNetwork):
             summary["hierarchical_structure"] = self.explain_hierarchical_structure()
         
@@ -502,25 +545,157 @@ class BayesianNetwork:
 
         return insights
 
+    def generate_actionable_insights(self):
+        insights = []
+        sensitivity = self.compute_sensitivity('CogFluidComp_Unadj')
+        
+        if sensitivity['FS_L_Hippo_Vol'] > 0.1:
+            insights.append("Focus on memory exercises to potentially improve fluid cognitive abilities.")
+        
+        if sensitivity['NEOFAC_O'] > 0.1:
+            insights.append("Encourage openness to new experiences as part of cognitive training.")
+        
+        if sensitivity['FS_BrainStem_Vol'] > 0.1:
+            insights.append("Consider incorporating balance and coordination exercises to potentially benefit cognitive function.")
+        
+        return insights
+
+    def analyze_personality_cognition_relationship(self):
+        personality_traits = ['NEOFAC_O', 'NEOFAC_C']
+        cognitive_measures = ['CogFluidComp_Unadj', 'CogCrystalComp_Unadj']
+        
+        relationships = {}
+        for trait in personality_traits:
+            for measure in cognitive_measures:
+                correlation = np.corrcoef(self.data[trait], self.data[measure])[0, 1]
+                relationships[f"{trait}-{measure}"] = correlation
+        
+        return relationships
+
+    def analyze_age_dependent_relationships(self):
+        young_data = self.data[self.data['Age'] < 30]
+        old_data = self.data[self.data['Age'] >= 30]
+        
+        young_model = BayesianNetwork()
+        old_model = BayesianNetwork()
+        
+        young_model.fit(young_data)
+        old_model.fit(old_data)
+        
+        young_sensitivity = young_model.compute_sensitivity('CogFluidComp_Unadj')
+        old_sensitivity = old_model.compute_sensitivity('CogFluidComp_Unadj')
+        
+        age_differences = {}
+        for key in young_sensitivity.keys():
+            age_differences[key] = old_sensitivity[key] - young_sensitivity[key]
+        
+        return age_differences
+
+    def get_practical_implications(self):
+        implications = []
+        sensitivity = self.compute_sensitivity('CogFluidComp_Unadj')
+        
+        if sensitivity['FS_Total_GM_Vol'] > 0.1:
+            implications.append("Focus on exercises that promote gray matter preservation, such as learning new skills or languages.")
+        
+        if sensitivity['FS_Tot_WM_Vol'] > 0.1:
+            implications.append("Incorporate tasks that challenge white matter integrity, like complex problem-solving or strategic thinking exercises.")
+        
+        if sensitivity['FS_BrainStem_Vol'] > 0.1:
+            implications.append("Consider including balance and coordination exercises, which may indirectly benefit cognitive function through brain stem activation.")
+        
+        if sensitivity['NEOFAC_O'] > 0.1:
+            implications.append("Encourage openness to new experiences as part of the cognitive training regimen.")
+        
+        return implications
+
+    def perform_age_stratified_analysis(self):
+        age_groups = {
+            'Young': (0, 30),
+            'Middle': (31, 60),
+            'Older': (61, 100)
+        }
+        
+        results = {}
+        for group, (min_age, max_age) in age_groups.items():
+            group_data = self.data[(self.data['Age'] >= min_age) & (self.data['Age'] <= max_age)]
+            group_model = BayesianNetwork()
+            group_model.fit(group_data)
+            results[group] = {
+                'sensitivity': group_model.compute_sensitivity('CogFluidComp_Unadj'),
+                'key_relationships': group_model.get_key_relationships()
+            }
+        
+        return results
+
+    def explain_unexpected_findings(self):
+        explanations = []
+        sensitivity = self.compute_sensitivity('CogFluidComp_Unadj')
+        
+        if sensitivity['FS_BrainStem_Vol'] < -0.1:
+            explanations.append(
+                "Unexpectedly, brain stem volume shows a negative relationship with fluid cognitive ability. "
+                "This could suggest that the brain stem's role in cognition is more complex than previously thought, "
+                "possibly involving compensatory mechanisms or reflecting broader neurodevelopmental processes."
+            )
+        
+        if sensitivity['FS_R_Amygdala_Vol'] > sensitivity['FS_L_Amygdala_Vol']:
+            explanations.append(
+                "The right amygdala volume appears to have a stronger influence on fluid cognitive ability than the left. "
+                "This asymmetry might indicate a more significant role of right-hemisphere emotional processing in cognitive flexibility."
+            )
+        
+        return explanations
+
+    def enforce_expected_connections(self):
+        expected_connections = [
+            ('FS_L_Hippo_Vol', 'CogFluidComp_Unadj'),
+            ('FS_R_Hippo_Vol', 'CogFluidComp_Unadj'),
+            ('FS_BrainStem_Vol', 'ProcSpeed_Unadj'),
+            ('NEOFAC_O', 'CogCrystalComp_Unadj'),
+            ('NEOFAC_C', 'CogFluidComp_Unadj')
+        ]
+        for parent, child in expected_connections:
+            if child not in self.nodes[parent].children:
+                self.add_edge(parent, child)
+        
+        self.fit(self.data)  # Refit the model with new connections
+
+    def analyze_brain_stem_relationship(self):
+        brain_stem_correlations = {}
+        for measure in ['CogFluidComp_Unadj', 'CogCrystalComp_Unadj', 'ProcSpeed_Unadj']:
+            correlation = np.corrcoef(self.data['FS_BrainStem_Vol'], self.data[measure])[0, 1]
+            brain_stem_correlations[measure] = correlation
+        return brain_stem_correlations
+
     def get_personalized_recommendations(self, individual_data):
         recommendations = []
         
-        if individual_data['Age'] > 60:
-            recommendations.append(
-                "Focus on exercises that promote gray matter preservation, such as learning a new language or musical instrument."
-            )
+        if individual_data['FS_Total_GM_Vol'] < self.data['FS_Total_GM_Vol'].mean():
+            recommendations.append("Focus on activities that promote gray matter preservation, such as learning a new language or musical instrument.")
         
-        if individual_data['FS_L_Hippo_Vol'] < self.network.nodes['FS_L_Hippo_Vol'].distribution[0]:
-            recommendations.append(
-                "Emphasize memory-enhancing exercises, particularly those involving spatial navigation and episodic memory formation."
-            )
+        if individual_data['FS_Tot_WM_Vol'] < self.data['FS_Tot_WM_Vol'].mean():
+            recommendations.append("Engage in tasks that challenge white matter integrity, like complex problem-solving or strategic games.")
         
-        if individual_data['NEOFAC_O'] > self.network.nodes['NEOFAC_O'].distribution[0]:
-            recommendations.append(
-                "Leverage high openness to experience with diverse, challenging cognitive tasks that encourage exploration and creativity."
-            )
+        if individual_data['NEOFAC_O'] > self.data['NEOFAC_O'].mean():
+            recommendations.append("Leverage your openness to experience with diverse and novel cognitive challenges.")
         
         return recommendations
+
+    def get_confidence_intervals(self):
+        ci_results = {}
+        for node, parents in self.network.nodes.items():
+            if parents:
+                X = self.data[[p.name for p in parents]]
+                y = self.data[node]
+                model = stats.linregress(X, y)
+                ci_results[node] = {
+                    'coefficients': model.slope,
+                    'ci_lower': model.slope - model.stderr * 1.96,
+                    'ci_upper': model.slope + model.stderr * 1.96,
+                    'p_value': model.pvalue
+                }
+        return ci_results
 
     def explain_structure_extended(self):
         structure = {
