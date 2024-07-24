@@ -5,32 +5,68 @@ from typing import List, Callable, Tuple, Dict, Any
 from scipy.special import logsumexp
 from bayesian_node import BayesianNode, CategoricalNode
 from .bayesian_network import BayesianNetwork
+from .structure_learning import learn_structure
 
 logger = logging.getLogger(__name__)
 
 class BayesianModel:
     def __init__(self, method='hill_climb', max_parents=2, iterations=300, categorical_columns=None):
-        self.network = BayesianNetwork(method=method, max_parents=max_parents, iterations=iterations, categorical_columns=categorical_columns)
+        self.network = BayesianNetwork()
 
+    def fit(self, data: pd.DataFrame, prior_edges: List[tuple] = None, progress_callback: Callable[[float], None] = None):
+        """Fit the Bayesian network to the data."""
+        try:
+            preprocessed_data = self.preprocess_data(data)
+            
+            # Learn structure
+            if progress_callback:
+                progress_callback(0.3)
+            self.network.learn_structure(preprocessed_data, prior_edges)
+            
+            # Fit parameters
+            if progress_callback:
+                progress_callback(0.6)
+            self.network.fit_parameters(preprocessed_data)
+            
+            if progress_callback:
+                progress_callback(1.0)
+        except Exception as e:
+            logger.error(f"Error during model fitting: {e}")
+            raise
+
+    def preprocess_data(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Preprocess data for the Bayesian network."""
+        return self.network.preprocess_data(data)
+
+    def evaluate(self, data: pd.DataFrame, num_folds: int = 5) -> float:
+        """Evaluate the Bayesian network using cross-validation."""
+        return self.network.cross_validate(data, num_folds)
+
+    def compute_sensitivity(self, target_node: str, num_samples: int = 1000) -> Dict[str, float]:
+        """Compute sensitivity of the target node to changes in other nodes."""
+        return self.network.compute_sensitivity(target_node, num_samples)
+
+    def analyze_network(self):
+        analysis = {}
+        
+        # Compute marginal likelihoods
+        analysis['marginal_likelihoods'] = self.compute_marginal_likelihoods()
+        
+        # Compute posterior probabilities of edges
+        analysis['edge_probabilities'] = self.compute_edge_probabilities()
+        
+        # Identify most influential nodes
+        analysis['influential_nodes'] = self.identify_influential_nodes()
+
+    def save(self, filename: str):
+        """Save the Bayesian network to a file."""
+        self.network.save(filename)
 
     def write_results_to_json(self, results):
         self.network.write_results_to_json(results)
 
     def explain_structure_extended(self):
         return self.network.explain_structure_extended()
-
-    def preprocess_data(self, data: pd.DataFrame) -> pd.DataFrame:
-        """Preprocess data for the Bayesian network."""
-        return self.network.preprocess_data(data)
-
-    def evaluate(self, data: pd.DataFrame, k_folds: int = 5) -> Tuple[float, float]:
-        """Evaluate the Bayesian network using cross-validation."""
-        preprocessed_data = self.preprocess_data(data)
-        return self.network.cross_validate(preprocessed_data, k_folds=k_folds)
-
-    def save(self, filename: str):
-        """Save the Bayesian network to a file."""
-        self.network.save(filename)
 
     @classmethod
     def load(cls, filename: str):

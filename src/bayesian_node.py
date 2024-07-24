@@ -201,6 +201,7 @@ class CategoricalNode(BayesianNode):
         })
         return base_dict
 
+
     def fit(self, data, parent_data=None):
         if parent_data is None or len(parent_data) == 0:
             counts = np.bincount(data, minlength=len(self.categories))

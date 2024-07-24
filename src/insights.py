@@ -7,8 +7,6 @@ import pandas as pd
 from bayesian_network import BayesianNetwork, HierarchicalBayesianNetwork
 from bayesian_node import BayesianNode, CategoricalNode
 
-def explain_structure():
-    return {"nodes": list(nodes.keys()), "edges": get_edges()}
 
 def explain_structure_extended():
     structure = {"nodes": list(nodes.keys()), "edges": get_edges()}

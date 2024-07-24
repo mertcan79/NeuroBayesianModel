@@ -13,10 +13,10 @@ from .insights import (
     perform_age_stratified_analysis, get_practical_implications, get_age_specific_insights,
     get_gender_specific_insights, explain_key_relationships, get_unexpected_insights, get_personalized_recommendations,
     analyze_brain_stem_relationship, generate_actionable_insights, analyze_personality_cognition_relationship, analyze_age_dependent_relationships,
-    explain_unexpected_findings, get_novel_insights, get_clinical_implications, get_performance_metrics
-
+    explain_unexpected_findings, get_novel_insights, get_clinical_implications, 
 )
-#from .bayesian_network import get_confidence_intervals, get_performance_metrics, get_intervention_simulations
+
+from .bayesian_network import get_confidence_intervals, get_performance_metrics, get_intervention_simulations, get_confidence_intervals
 
 def write_results_to_json(results: Dict[str, Any], filename: str = None):
     if filename is None:
@@ -52,13 +52,6 @@ def write_results_to_json(results: Dict[str, Any], filename: str = None):
     results["key_relationships"] = get_key_relationships()
     results["novel_insights"] = get_novel_insights()
     results["clinical_implications"] = get_clinical_implications()
-    
-    # Add model performance metrics
-    results["model_performance"] = {
-        "accuracy": get_accuracy(),
-        "precision": get_precision(),
-        "recall": get_recall()
-    }
     
     # Add confidence intervals for key relationships
     results["confidence_intervals"] = get_confidence_intervals()

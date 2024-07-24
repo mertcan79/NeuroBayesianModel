@@ -44,7 +44,7 @@ def fit_bayesian_network(data_dict, prior_edges, categorical_columns):
     )
     
     # Convert pgmpy model to our BayesianNetwork format
-    model = BayesianNetwork(method='hill_climb', max_parents=2, iterations= 300, categorical_columns=categorical_columns)
+    model = BayesianNetwork(method='k2', max_parents=2, iterations= 300, categorical_columns=categorical_columns)
     
     # Add edges from best_model and prior_edges
     for edge in best_model.edges():
