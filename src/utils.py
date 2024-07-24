@@ -1,14 +1,19 @@
 import os
 import json
-from typing import Dict, Any
 from datetime import datetime
 import numpy as np
 import pandas as pd
 from bayesian_network import HierarchicalBayesianNetwork
 from bayesian_node import BayesianNode, CategoricalNode
+from .bayesian_network import BayesianNetwork
+from typing import Dict, Any, List, Tuple
+from .insights import (
+    explain_structure_extended, summarize_key_findings,
+    summarize_personality_cognition, summarize_age_dependent_changes, get_key_relationships
+)
 
 
-def write_results_to_json(self, results: Dict[str, Any], filename: str = None):
+def write_results_to_json(results: Dict[str, Any], filename: str = None):
     if filename is None:
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         filename = f"results_{timestamp}.json"
@@ -35,59 +40,59 @@ def write_results_to_json(self, results: Dict[str, Any], filename: str = None):
             return obj
 
     
-    if isinstance(self, HierarchicalBayesianNetwork):
-        results["hierarchical_structure"] = self.explain_hierarchical_structure()
+    if isinstance(HierarchicalBayesianNetwork):
+        results["hierarchical_structure"] = explain_hierarchical_structure()
     
     # Add key relationships and insights
-    results["key_relationships"] = self.get_key_relationships()
-    results["novel_insights"] = self.get_novel_insights()
-    results["clinical_implications"] = self.get_clinical_implications()
+    results["key_relationships"] = get_key_relationships()
+    results["novel_insights"] = get_novel_insights()
+    results["clinical_implications"] = get_clinical_implications()
     
     # Add model performance metrics
     results["model_performance"] = {
-        "accuracy": self.get_accuracy(),
-        "precision": self.get_precision(),
-        "recall": self.get_recall()
+        "accuracy": get_accuracy(),
+        "precision": get_precision(),
+        "recall": get_recall()
     }
     
     # Add confidence intervals for key relationships
-    results["confidence_intervals"] = self.get_confidence_intervals()
+    results["confidence_intervals"] = get_confidence_intervals()
     
     # Add intervention simulation results
-    results["intervention_simulations"] = self.get_intervention_simulations()
+    results["intervention_simulations"] = get_intervention_simulations()
     
     # Add age and gender-specific insights
-    results["age_specific_insights"] = self.get_age_specific_insights()
-    results["gender_specific_insights"] = self.get_gender_specific_insights()
+    results["age_specific_insights"] = get_age_specific_insights()
+    results["gender_specific_insights"] = get_gender_specific_insights()
     
-    results["key_relationship_explanations"] = self.explain_key_relationships()
-    results["performance_metrics"] = self.get_performance_metrics()
-    results["unexpected_insights"] = self.get_unexpected_insights()
+    results["key_relationship_explanations"] = explain_key_relationships()
+    results["performance_metrics"] = get_performance_metrics()
+    results["unexpected_insights"] = get_unexpected_insights()
 
-    results["network_structure"] = self.explain_structure_extended()
+    results["network_structure"] = explain_structure_extended()
 
     # Example individual for personalized recommendations
     example_individual = {
-        'FS_Total_GM_Vol': self.data['FS_Total_GM_Vol'].mean(),
-        'FS_Tot_WM_Vol': self.data['FS_Tot_WM_Vol'].mean(),
-        'NEOFAC_O': self.data['NEOFAC_O'].mean()
+        'FS_Total_GM_Vol': data['FS_Total_GM_Vol'].mean(),
+        'FS_Tot_WM_Vol': data['FS_Tot_WM_Vol'].mean(),
+        'NEOFAC_O': data['NEOFAC_O'].mean()
     }
-    results["personalized_recommendations_example"] = self.get_personalized_recommendations(example_individual)
+    results["personalized_recommendations_example"] = get_personalized_recommendations(example_individual)
     
-    results["confidence_intervals"] = self.get_confidence_intervals()
+    results["confidence_intervals"] = get_confidence_intervals()
     
-    results["brain_stem_relationships"] = self.analyze_brain_stem_relationship()
-    results["actionable_insights"] = self.generate_actionable_insights()
-    results["personality_cognition_relationships"] = self.analyze_personality_cognition_relationship()
-    results["age_dependent_relationships"] = self.analyze_age_dependent_relationships()
+    results["brain_stem_relationships"] = analyze_brain_stem_relationship()
+    results["actionable_insights"] = generate_actionable_insights()
+    results["personality_cognition_relationships"] = analyze_personality_cognition_relationship()
+    results["age_dependent_relationships"] = analyze_age_dependent_relationships()
     
     # Enforce expected connections and refit if necessary
-    self.enforce_expected_connections()
-    results["updated_network_structure"] = self.explain_structure_extended()
+    enforce_expected_connections()
+    results["updated_network_structure"] = explain_structure_extended()
 
-    results["practical_implications"] = self.get_practical_implications()
-    results["age_stratified_analysis"] = self.perform_age_stratified_analysis()
-    results["unexpected_findings_explanations"] = self.explain_unexpected_findings()
+    results["practical_implications"] = get_practical_implications()
+    results["age_stratified_analysis"] = perform_age_stratified_analysis()
+    results["unexpected_findings_explanations"] = explain_unexpected_findings()
     
 
     # Potential applications for cognitive training programs
@@ -98,14 +103,14 @@ def write_results_to_json(self, results: Dict[str, Any], filename: str = None):
         "Creative problem-solving tasks to leverage the relationship between openness and cognitive flexibility"
     ]
 
-    self.network.write_results_to_json(results)
+    network.write_results_to_json(results)
 
     serializable_results = make_serializable(results)
     
     with open(file_path, 'w') as f:
         json.dump(serializable_results, f, indent=2)
 
-def write_summary_to_json(self, results: Dict[str, Any], filename: str = None):
+def write_summary_to_json(network, results: Dict[str, Any], filename: str = None):
     if filename is None:
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         filename = f"bayesian_network_summary_{timestamp}.json"
@@ -116,22 +121,19 @@ def write_summary_to_json(self, results: Dict[str, Any], filename: str = None):
     file_path = os.path.join(log_folder, filename)
 
     summary = {
-        "network_structure": self.explain_structure_extended(),
+        "network_structure": network.explain_structure_extended(),
         "mean_log_likelihood": results.get("mean_log_likelihood"),
         "std_log_likelihood": results.get("std_log_likelihood"),
         "sensitivity": results.get("sensitivity"),
-        "num_nodes": len(self.nodes),
-        "num_edges": len(self.get_edges()),
-        "categorical_variables": self.categorical_columns,
-        "continuous_variables": [node for node in self.nodes if node not in self.categorical_columns],
-        "key_findings": self.summarize_key_findings(),
-        "future_research_directions": self.suggest_future_research(),
-        "key_personality_cognition_findings": self._summarize_personality_cognition(results.get("personality_cognition_relationships")),
-        "significant_age_dependent_changes": self._summarize_age_dependent_changes(results.get("age_dependent_relationships")),
+        "num_nodes": len(network.nodes),
+        "num_edges": len(network.get_edges()),
+        "categorical_variables": network.categorical_columns,
+        "continuous_variables": [node for node in network.nodes if node not in network.categorical_columns],
+        "key_findings": network.summarize_key_findings(),
+        "future_research_directions": network.suggest_future_research(),
+        "key_personality_cognition_findings": summarize_personality_cognition(results.get("personality_cognition_relationships")),
+        "significant_age_dependent_changes": summarize_age_dependent_changes(results.get("age_dependent_relationships")),
     }
-    
-    if isinstance(self, HierarchicalBayesianNetwork):
-        summary["hierarchical_structure"] = self.explain_hierarchical_structure()
     
     try:
         with open(file_path, 'w') as f:
@@ -140,17 +142,18 @@ def write_summary_to_json(self, results: Dict[str, Any], filename: str = None):
     except Exception as e:
         print(f"Error writing summary to file: {str(e)}")
 
-def to_dict(self):
+def network_to_dict(nodes, method, max_parents, categorical_columns):
     return {
-        'nodes': {name: node.to_dict() for name, node in self.nodes.items()},
-        'method': self.method,
-        'max_parents': self.max_parents,
-        'categorical_columns': self.categorical_columns
+        'nodes': {name: node.to_dict() for name, node in nodes.items()},
+        'method': method,
+        'max_parents': max_parents,
+        'categorical_columns': categorical_columns
     }
-    
-@classmethod
-def from_dict(cls, data):
-    bn = cls(method=data['method'], max_parents=data['max_parents'], categorical_columns=data['categorical_columns'])
+
+def network_from_dict(data):
+
+
+    bn = BayesianNetwork(method=data['method'], max_parents=data['max_parents'], categorical_columns=data['categorical_columns'])
     bn.nodes = {}
     for name, node_data in data['nodes'].items():
         if name in bn.categorical_columns:

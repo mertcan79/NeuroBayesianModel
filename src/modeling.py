@@ -166,12 +166,3 @@ class BayesianModel:
 
         return simulated_data
     
-
-    def get_model_performance(self):
-        return {
-            "accuracy": self.get_accuracy(),
-            "precision": self.get_precision(),
-            "recall": self.get_recall(),
-            "f1_score": self.get_f1_score(),
-            "auc_roc": self.get_auc_roc(),
-        }

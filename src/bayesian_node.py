@@ -2,7 +2,7 @@ import numpy as np
 from typing import List, Tuple, Union
 from scipy import stats
 import pandas as pd
-
+from scipy.stats import norm, gamma, dirichlet
 
 class BayesianNode:
     def __init__(self, name: str):
@@ -21,6 +21,15 @@ class BayesianNode:
 
     def __hash__(self):
         return hash(self.name)
+
+    def to_dict(self):
+        return {
+            'name': self.name,
+            'parents': [parent.name for parent in self.parents],
+            'children': [child.name for child in self.children],
+            'parameters': self.parameters,
+            'distribution': str(self.distribution) if self.distribution else None
+        }
 
     def add_parent(self, parent: 'BayesianNode'):
         if parent not in self.parents:
@@ -46,33 +55,76 @@ class BayesianNode:
         else:
             self.fit_continuous(node_data, parent_data)
 
-    def fit_categorical(self, node_data, parent_data=None):
-        if parent_data is None or parent_data.empty:
-            value_counts = node_data.value_counts(normalize=True)
-            self.distribution = value_counts.to_dict()
-        else:
-            joint_counts = pd.crosstab(parent_data.apply(tuple, axis=1), node_data)
-            self.distribution = (joint_counts / joint_counts.sum(axis=1)).to_dict()
-
     def fit_continuous(self, node_data, parent_data):
-        if parent_data is not None and len(parent_data.columns) > 0:
+        if parent_data is None or parent_data.empty:
+            # Normal-Gamma conjugate prior
+            prior_mean = 0
+            prior_precision = 1
+            prior_shape = 1
+            prior_rate = 1
+
+            n = len(node_data)
+            sample_mean = np.mean(node_data)
+            sample_var = np.var(node_data)
+
+            posterior_mean = (prior_precision * prior_mean + n * sample_mean) / (prior_precision + n)
+            posterior_precision = prior_precision + n
+            posterior_shape = prior_shape + n / 2
+            posterior_rate = prior_rate + 0.5 * (n * sample_var + prior_precision * n * (sample_mean - prior_mean)**2 / (prior_precision + n))
+
+            self.distribution = {
+                'mean': posterior_mean,
+                'precision': posterior_precision,
+                'shape': posterior_shape,
+                'rate': posterior_rate
+            }
+        else:
+            # Multivariate Normal-Wishart for multiple parents
             X = parent_data.values
             y = node_data.values
-            print(f"X shape: {X.shape}, y shape: {y.shape}")
-            print(f"X columns: {parent_data.columns}")
-            print(f"y name: {node_data.name}")
-            try:
-                X = np.column_stack((np.ones(X.shape[0]), X))
-                model, residuals, rank, s = np.linalg.lstsq(X, y, rcond=None)
-                self.distribution = (model, np.std(residuals))
-            except Exception as e:
-                print(f"Error in regression: {str(e)}")
-                raise
-        else:
-            self.distribution = (np.mean(node_data), np.std(node_data))
 
-    def transform(self, data: np.ndarray) -> np.ndarray:
-        return data
+            n, d = X.shape
+            prior_mean = np.zeros(d)
+            prior_precision = np.eye(d)
+            prior_df = d + 2
+            prior_scale = np.eye(d)
+
+            X_mean = X.mean(axis=0)
+            S = np.cov(X, rowvar=False) * (n - 1)
+            beta = np.linalg.solve(S, np.dot(X.T, y))
+
+            posterior_mean = np.linalg.solve(prior_precision + n * np.linalg.inv(S), 
+                                             np.dot(prior_precision, prior_mean) + n * np.dot(np.linalg.inv(S), X_mean))
+            posterior_precision = prior_precision + n * np.linalg.inv(S)
+            posterior_df = prior_df + n
+            posterior_scale = prior_scale + S + \
+                              n * np.outer(X_mean - posterior_mean, np.dot(np.linalg.inv(S), X_mean - posterior_mean))
+
+            self.distribution = {
+                'mean': posterior_mean,
+                'precision': posterior_precision,
+                'df': posterior_df,
+                'scale': posterior_scale,
+                'beta': beta
+            }
+
+    def fit_categorical(self, node_data, parent_data):
+        if parent_data is None or parent_data.empty:
+            # Dirichlet conjugate prior
+            prior_counts = np.ones(len(self.categories))
+            counts = np.bincount(node_data, minlength=len(self.categories))
+            posterior_counts = prior_counts + counts
+            self.distribution = dirichlet(posterior_counts)
+        else:
+            # Dirichlet for each parent combination
+            parent_combinations = parent_data.apply(tuple, axis=1).unique()
+            self.distribution = {}
+            for combination in parent_combinations:
+                mask = (parent_data.apply(tuple, axis=1) == combination)
+                counts = np.bincount(node_data[mask], minlength=len(self.categories))
+                prior_counts = np.ones(len(self.categories))
+                posterior_counts = prior_counts + counts
+                self.distribution[combination] = dirichlet(posterior_counts)
 
     def sample(self, size: int, parent_values: pd.DataFrame = None) -> np.ndarray:
         if parent_values is not None and not parent_values.empty:
@@ -151,7 +203,7 @@ class CategoricalNode(BayesianNode):
     @classmethod
     def from_dict(cls, data):
         node = cls(data['name'], data['original_categories'])
-        node.params = data['params']
+        node.parameteres = data['params']
         node.categories = data['categories']
         node.cpt = np.array(data['cpt']) if data['cpt'] is not None else None
         return node
@@ -160,8 +212,8 @@ class CategoricalNode(BayesianNode):
         if parent_data is None or len(parent_data) == 0:
             counts = np.bincount(data, minlength=len(self.categories))
             self.distribution = stats.multinomial(n=1, p=counts / np.sum(counts))
-            self.params = {"p": self.distribution.p}
-            self.cpt = self.params["p"]
+            self.parameters = {"p": self.distribution.p}
+            self.cpt = self.parameters["p"]
         else:
             parent_combinations = np.array(np.meshgrid(*[range(len(set(parent_data[col]))) for col in parent_data.columns])).T.reshape(-1, parent_data.shape[1])
             
@@ -171,7 +223,7 @@ class CategoricalNode(BayesianNode):
                 counts = np.bincount(data[mask], minlength=len(self.categories))
                 self.cpt[i] = counts / np.sum(counts)
 
-            self.params = {"cpt": self.cpt}
+            self.parameters = {"cpt": self.cpt}
         return self  # Return self to allow method chaining
 
     def log_probability(self, value, parent_values=None):

@@ -286,7 +286,7 @@ def get_novel_insights(self):
 
     return insights
 
-def get_age_specific_insights(self):
+def get_age_specific_insights(self) -> List[str]:
     if self.data is None:
         return ["No data available for age-specific insights."]
 
@@ -294,18 +294,8 @@ def get_age_specific_insights(self):
     young_data = self.data[self.data["Age"] < self.data["Age"].median()]
     old_data = self.data[self.data["Age"] >= self.data["Age"].median()]
 
-    young_model = BayesianNetwork(
-        method=self.method,
-        max_parents=self.max_parents,
-        iterations=self.iterations,
-        categorical_columns=self.categorical_columns,
-    )
-    old_model = BayesianNetwork(
-        method=self.method,
-        max_parents=self.max_parents,
-        iterations=self.iterations,
-        categorical_columns=self.categorical_columns,
-    )
+    young_model = BayesianNetwork(nodes=self.nodes, edges=self.edges)
+    old_model = BayesianNetwork(nodes=self.nodes, edges=self.edges)
 
     young_model.fit(young_data)
     old_model.fit(old_data)
@@ -317,11 +307,13 @@ def get_age_specific_insights(self):
         if abs(young_sensitivity[feature] - old_sensitivity[feature]) > 0.1:
             if young_sensitivity[feature] > old_sensitivity[feature]:
                 insights.append(
-                    f"{feature} has a stronger influence on fluid cognitive abilities in younger individuals (sensitivity difference: {young_sensitivity[feature] - old_sensitivity[feature]:.2f})"
+                    f"{feature} has a stronger influence on fluid cognitive abilities in younger individuals "
+                    f"(sensitivity difference: {young_sensitivity[feature] - old_sensitivity[feature]:.2f})"
                 )
             else:
                 insights.append(
-                    f"{feature} has a stronger influence on fluid cognitive abilities in older individuals (sensitivity difference: {old_sensitivity[feature] - young_sensitivity[feature]:.2f})"
+                    f"{feature} has a stronger influence on fluid cognitive abilities in older individuals "
+                    f"(sensitivity difference: {old_sensitivity[feature] - young_sensitivity[feature]:.2f})"
                 )
 
     return insights
@@ -379,42 +371,90 @@ def summarize_key_findings(self) -> str:
 
     return summary
 
-def _analyze_brain_stem_relationship(self, relationships):
+def analyze_brain_stem_relationship(relationships: Dict[str, float]) -> Dict[str, float]:
     if not relationships:
-        return "No brain stem relationship data available."
+        return {}
     return {k: round(v, 3) for k, v in relationships.items()}
 
-def _summarize_personality_cognition(self, relationships):
+def summarize_personality_cognition(relationships: Dict[str, float]) -> Dict[str, float]:
     if not relationships:
-        return "No personality-cognition relationship data available."
-    return {
-        k: round(v, 3)
-        for k, v in sorted(
-            relationships.items(), key=lambda x: abs(x[1]), reverse=True
-        )[:3]
-    }
+        return {}
+    return dict(sorted(
+        {k: round(v, 3) for k, v in relationships.items()}.items(),
+        key=lambda x: abs(x[1]),
+        reverse=True
+    )[:3])
 
-def _summarize_brain_stem_relationships(self, relationships):
+def summarize_brain_stem_relationships(relationships: Dict[str, float]) -> Dict[str, float]:
     if not relationships:
-        return "No brain stem relationship data available."
+        return {}
     return {k: round(v, 3) for k, v in relationships.items()}
 
-def _summarize_age_dependent_changes(self, changes):
+def summarize_age_dependent_changes(changes: Dict[str, float]) -> Dict[str, float]:
     if not changes:
-        return "No age-dependent relationship data available."
-    significant_changes = {
-        k: round(v, 3) for k, v in changes.items() if abs(v) > 0.1
-    }
-    return dict(
-        sorted(significant_changes.items(), key=lambda x: abs(x[1]), reverse=True)[
-            :5
-        ]
-    )
+        return {}
+    significant_changes = {k: round(v, 3) for k, v in changes.items() if abs(v) > 0.1}
+    return dict(sorted(significant_changes.items(), key=lambda x: abs(x[1]), reverse=True)[:5])
 
-def suggest_future_research(self) -> List[str]:
-    suggestions = [
-        "Investigate the causal mechanisms behind the strong relationship between brain stem volume and processing speed",
-        "Explore the age-dependent effects of hippocampal volume on cognitive fluid composite scores",
-        "Conduct longitudinal studies to track how these relationships change over time",
+
+def get_key_relationships(self) -> List[Dict[str, Any]]:
+    relationships = []
+    for node_name, node in self.nodes.items():
+        for parent in node.parents:
+            strength = abs(self.compute_edge_strength(parent.name, node_name))
+            relationships.append(
+                {"parent": parent.name, "child": node_name, "strength": strength}
+            )
+    sorted_relationships = sorted(
+        relationships, key=lambda x: x["strength"], reverse=True
+    )
+    top_10_percent = sorted_relationships[: max(1, len(sorted_relationships) // 10)]
+    return [
+        {
+            "parent": r["parent"],
+            "child": r["child"],
+            "strength": round(r["strength"], 2),
+        }
+        for r in top_10_percent
     ]
-    return suggestions
+
+def get_novel_insights(self) -> List[str]:
+    insights = []
+    sensitivity = self.compute_sensitivity("CogFluidComp_Unadj")
+    top_factors = sorted(sensitivity.items(), key=lambda x: x[1], reverse=True)[:3]
+    for factor, value in top_factors:
+        insights.append(
+            f"Unexpectedly high influence of {factor} on cognitive fluid composite (sensitivity: {value:.2f})"
+        )
+    return insights
+
+
+def explain_key_relationships(self):
+    explanations = []
+    relationships = self.get_key_relationships()
+    for rel in relationships:
+        if (
+            rel["parent"] == "FS_Total_GM_Vol"
+            and rel["child"] == "CogFluidComp_Unadj"
+        ):
+            explanations.append(
+                f"Total gray matter volume strongly influences fluid cognitive ability (strength: {rel['strength']}). "
+                "This suggests that cognitive training programs should focus on activities that promote gray matter preservation, "
+                "such as complex problem-solving tasks and learning new skills."
+            )
+        elif (
+            rel["parent"] == "FS_L_Hippo_Vol"
+            and rel["child"] == "CogFluidComp_Unadj"
+        ):
+            explanations.append(
+                f"Left hippocampus volume is closely related to fluid cognitive ability (strength: {rel['strength']}). "
+                "This highlights the importance of memory-enhancing exercises in cognitive training, particularly those "
+                "that engage spatial navigation and episodic memory formation."
+            )
+        elif rel["parent"] == "NEOFAC_O" and rel["child"] == "CogCrystalComp_Unadj":
+            explanations.append(
+                f"Openness to experience (NEOFAC_O) influences crystallized cognitive ability (strength: {rel['strength']}). "
+                "This suggests that encouraging curiosity and diverse learning experiences could enhance long-term cognitive performance."
+            )
+        # Add more specific explanations for other important relationships
+    return explanations

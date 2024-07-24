@@ -9,8 +9,10 @@ import logging
 import pandas as pd
 import numpy as np
 from scipy import stats
+from scipy.stats import norm, multivariate_normal
 import networkx as nx
 import statsmodels.api as sm
+from scipy.stats import multivariate_normal
 
 from .bayesian_node import BayesianNode, CategoricalNode
 from .structure_learning import learn_structure
@@ -184,27 +186,6 @@ class BayesianNetwork:
 
         return sensitivity
 
-    def get_key_relationships(self) -> List[Dict[str, Any]]:
-        relationships = []
-        for node_name, node in self.nodes.items():
-            for parent in node.parents:
-                strength = abs(self.compute_edge_strength(parent.name, node_name))
-                relationships.append(
-                    {"parent": parent.name, "child": node_name, "strength": strength}
-                )
-        sorted_relationships = sorted(
-            relationships, key=lambda x: x["strength"], reverse=True
-        )
-        top_10_percent = sorted_relationships[: max(1, len(sorted_relationships) // 10)]
-        return [
-            {
-                "parent": r["parent"],
-                "child": r["child"],
-                "strength": round(r["strength"], 2),
-            }
-            for r in top_10_percent
-        ]
-
     def compute_edge_strength(self, parent_name: str, child_name: str) -> float:
         parent_node = self.nodes[parent_name]
         child_node = self.nodes[child_name]
@@ -219,47 +200,6 @@ class BayesianNetwork:
         else:
             # If the distribution is not in the expected format, return a default value
             return 0.0
-
-    def get_novel_insights(self) -> List[str]:
-        insights = []
-        sensitivity = self.compute_sensitivity("CogFluidComp_Unadj")
-        top_factors = sorted(sensitivity.items(), key=lambda x: x[1], reverse=True)[:3]
-        for factor, value in top_factors:
-            insights.append(
-                f"Unexpectedly high influence of {factor} on cognitive fluid composite (sensitivity: {value:.2f})"
-            )
-        return insights
-
-
-    def explain_key_relationships(self):
-        explanations = []
-        relationships = self.get_key_relationships()
-        for rel in relationships:
-            if (
-                rel["parent"] == "FS_Total_GM_Vol"
-                and rel["child"] == "CogFluidComp_Unadj"
-            ):
-                explanations.append(
-                    f"Total gray matter volume strongly influences fluid cognitive ability (strength: {rel['strength']}). "
-                    "This suggests that cognitive training programs should focus on activities that promote gray matter preservation, "
-                    "such as complex problem-solving tasks and learning new skills."
-                )
-            elif (
-                rel["parent"] == "FS_L_Hippo_Vol"
-                and rel["child"] == "CogFluidComp_Unadj"
-            ):
-                explanations.append(
-                    f"Left hippocampus volume is closely related to fluid cognitive ability (strength: {rel['strength']}). "
-                    "This highlights the importance of memory-enhancing exercises in cognitive training, particularly those "
-                    "that engage spatial navigation and episodic memory formation."
-                )
-            elif rel["parent"] == "NEOFAC_O" and rel["child"] == "CogCrystalComp_Unadj":
-                explanations.append(
-                    f"Openness to experience (NEOFAC_O) influences crystallized cognitive ability (strength: {rel['strength']}). "
-                    "This suggests that encouraging curiosity and diverse learning experiences could enhance long-term cognitive performance."
-                )
-            # Add more specific explanations for other important relationships
-        return explanations
 
     def get_performance_metrics(self):
         # Assuming we've already performed cross-validation
@@ -277,44 +217,50 @@ class BayesianNetwork:
             ),
         }
 
-    def get_accuracy(self):
-        if self.data is None:
-            return 0.0
-        X = self.data.drop(["CogFluidComp_Unadj", "CogCrystalComp_Unadj"], axis=1)
-        y = self.data["CogFluidComp_Unadj"]
-        y_binary = (y > y.median()).astype(int)
-        scaler = StandardScaler()
-        X_scaled = scaler.fit_transform(X)
-        model = LogisticRegression(random_state=42, max_iter=1000)
-        predictions = cross_val_predict(model, X_scaled, y_binary, cv=5)
-        return accuracy_score(y_binary, predictions)
+    def _expectation_step(self, data: pd.DataFrame):
+        responsibilities = {}
+        for node in self.nodes:
+            parents = [edge[0] for edge in self.edges if edge[1] == node]
+            if not parents:
+                # For nodes without parents, responsibility is 1
+                responsibilities[node] = np.ones(len(data))
+            else:
+                X = data[parents].values
+                y = data[node].values
+                beta = self.parameters[node]['beta']
+                std = self.parameters[node]['std']
+                
+                mean = X @ beta
+                prob = multivariate_normal.pdf(y, mean=mean, cov=std**2)
+                responsibilities[node] = prob / prob.sum()
+        
+        return responsibilities
 
-    def get_precision(self):
-        if self.data is None:
-            return 0.0
-        X = self.data.drop(["CogFluidComp_Unadj", "CogCrystalComp_Unadj"], axis=1)
-        y = self.data["CogFluidComp_Unadj"]
-        y_binary = (y > y.median()).astype(int)
-        scaler = StandardScaler()
-        X_scaled = scaler.fit_transform(X)
-        model = LogisticRegression(random_state=42, max_iter=1000)
-        predictions = cross_val_predict(model, X_scaled, y_binary, cv=5)
-        return precision_score(y_binary, predictions)
-
-    def get_recall(self):
-        if self.data is None:
-            return 0.0
-        X = self.data.drop(["CogFluidComp_Unadj", "CogCrystalComp_Unadj"], axis=1)
-        y = self.data["CogFluidComp_Unadj"]
-        y_binary = (y > y.median()).astype(int)
-        scaler = StandardScaler()
-        X_scaled = scaler.fit_transform(X)
-        model = LogisticRegression(random_state=42, max_iter=1000)
-        predictions = cross_val_predict(model, X_scaled, y_binary, cv=5)
-        return recall_score(y_binary, predictions)
-
-    def get_log_likelihood(self, test_data):
-        return self.log_likelihood(test_data)
+    def _maximization_step(self, data: pd.DataFrame, responsibilities):
+        for node in self.nodes:
+            parents = [edge[0] for edge in self.edges if edge[1] == node]
+            if not parents:
+                weighted_sum = (responsibilities[node] * data[node]).sum()
+                total_weight = responsibilities[node].sum()
+                self.parameters[node]['mean'] = weighted_sum / total_weight
+                self.parameters[node]['std'] = np.sqrt(
+                    ((data[node] - self.parameters[node]['mean'])**2 * responsibilities[node]).sum() / total_weight
+                )
+            else:
+                X = data[parents].values
+                y = data[node].values
+                weights = responsibilities[node]
+                
+                # Weighted least squares
+                weighted_X = X * np.sqrt(weights)[:, np.newaxis]
+                weighted_y = y * np.sqrt(weights)
+                beta = np.linalg.inv(weighted_X.T @ weighted_X) @ weighted_X.T @ weighted_y
+                
+                residuals = y - X @ beta
+                self.parameters[node]['beta'] = beta
+                self.parameters[node]['std'] = np.sqrt(
+                    (weights * residuals**2).sum() / weights.sum()
+                )
 
     def get_posterior_predictive(self, new_data):
         # This is a placeholder - the actual implementation would depend on your specific model
@@ -332,8 +278,6 @@ class BayesianNetwork:
                 )
         return predictions
 
-
-
     def topological_sort(self) -> List[str]:
         graph = nx.DiGraph()
         for node_name, node in self.nodes.items():
@@ -342,8 +286,6 @@ class BayesianNetwork:
                 graph.add_edge(parent.name, node_name)
 
         return list(nx.topological_sort(graph))
-
-
 
     def get_confidence_intervals(self):
         ci_results = {}
@@ -395,6 +337,111 @@ class BayesianNetwork:
             data = json.load(f)
         return cls.from_dict(data)
 
+    def fit(self, data: pd.DataFrame, prior: Dict[str, Any] = None, max_iter: int = 100, tol: float = 1e-6):
+        """
+        Fit the Bayesian Network using Expectation-Maximization (EM) algorithm.
+        
+        :param data: DataFrame containing the data
+        :param prior: Prior distributions for parameters
+        :param max_iter: Maximum number of iterations for EM
+        :param tol: Convergence tolerance
+        """
+        # Initialize parameters
+        self._initialize_parameters(data, prior)
+        
+        log_likelihood_old = -np.inf
+        for iteration in range(max_iter):
+            # E-step
+            responsibilities = self._expectation_step(data)
+            
+            # M-step
+            self._maximization_step(data, responsibilities)
+            
+            # Compute log-likelihood
+            log_likelihood_new = self._compute_log_likelihood(data)
+            
+            # Check for convergence
+            if abs(log_likelihood_new - log_likelihood_old) < tol:
+                print(f"Converged after {iteration + 1} iterations")
+                break
+            
+            log_likelihood_old = log_likelihood_new
+        
+        if iteration == max_iter - 1:
+            print(f"Did not converge after {max_iter} iterations")
+
+    def _initialize_parameters(self, data: pd.DataFrame, prior: Dict[str, Any]):
+        for node in self.nodes:
+            parents = [edge[0] for edge in self.edges if edge[1] == node]
+            if not parents:
+                self.parameters[node] = {
+                    'mean': data[node].mean(),
+                    'std': data[node].std()
+                }
+            else:
+                X = data[parents]
+                y = data[node]
+                beta = np.linalg.inv(X.T @ X) @ X.T @ y
+                residuals = y - X @ beta
+                self.parameters[node] = {
+                    'beta': beta,
+                    'std': residuals.std()
+                }
+
+    def _compute_log_likelihood(self, data: pd.DataFrame):
+        log_likelihood = 0
+        for node in self.nodes:
+            parents = [edge[0] for edge in self.edges if edge[1] == node]
+            if not parents:
+                log_likelihood += norm.logpdf(data[node], 
+                                              loc=self.parameters[node]['mean'], 
+                                              scale=self.parameters[node]['std']).sum()
+            else:
+                X = data[parents]
+                y = data[node]
+                mean = X @ self.parameters[node]['beta']
+                log_likelihood += norm.logpdf(y, loc=mean, scale=self.parameters[node]['std']).sum()
+        return log_likelihood
+
+    def _expectation_step(self, data: pd.DataFrame):
+        responsibilities = np.zeros((len(data), len(self.nodes)))
+        for i, node in enumerate(self.nodes):
+            parents = [edge[0] for edge in self.edges if edge[1] == node]
+            if not parents:
+                responsibilities[:, i] = norm.pdf(data[node], 
+                                                loc=self.parameters[node]['mean'], 
+                                                scale=self.parameters[node]['std'])
+            else:
+                X = data[parents]
+                y = data[node]
+                mean = X @ self.parameters[node]['beta']
+                responsibilities[:, i] = norm.pdf(y, loc=mean, scale=self.parameters[node]['std'])
+        
+        # Normalize responsibilities
+        responsibilities /= responsibilities.sum(axis=1, keepdims=True)
+        return responsibilities
+
+    def _maximization_step(self, data: pd.DataFrame, responsibilities):
+        for i, node in enumerate(self.nodes):
+            parents = [edge[0] for edge in self.edges if edge[1] == node]
+            weighted_data = data[node] * responsibilities[:, i]
+            
+            if not parents:
+                self.parameters[node]['mean'] = weighted_data.sum() / responsibilities[:, i].sum()
+                self.parameters[node]['std'] = np.sqrt(
+                    ((data[node] - self.parameters[node]['mean'])**2 * responsibilities[:, i]).sum() 
+                    / responsibilities[:, i].sum()
+                )
+            else:
+                X = data[parents]
+                y = data[node]
+                weighted_X = X * responsibilities[:, i][:, np.newaxis]
+                weighted_y = y * responsibilities[:, i]
+                self.parameters[node]['beta'] = np.linalg.solve(weighted_X.T @ X, weighted_X.T @ y)
+                residuals = y - X @ self.parameters[node]['beta']
+                self.parameters[node]['std'] = np.sqrt(
+                    (residuals**2 * responsibilities[:, i]).sum() / responsibilities[:, i].sum()
+                )
 
 class HierarchicalBayesianNetwork(BayesianNetwork):
     def __init__(self, levels: List[str], *args, **kwargs):
@@ -414,32 +461,68 @@ class HierarchicalBayesianNetwork(BayesianNetwork):
         self.nodes[child].parents.append(self.nodes[parent])
         self.nodes[parent].children.append(self.nodes[child])
 
-    def fit(self, data: pd.DataFrame, level_constraints: Dict[str, List[str]] = None):
-        preprocessed_data = self.preprocess_data(data)
-        for level in self.levels:
-            level_data = preprocessed_data[self.level_nodes[level]]
-            allowed_parents = self.level_nodes[level]
-            if level_constraints and level in level_constraints:
-                allowed_parents += level_constraints[level]
-            self._learn_structure(level_data, allowed_parents=allowed_parents)
-        fit_parameters(self.nodes, preprocessed_data)
+    def fit(self, data: pd.DataFrame, prior: Dict[str, Any] = None, max_iter: int = 100, tol: float = 1e-6):
+        """
+        Fit the Bayesian Network using Expectation-Maximization (EM) algorithm.
+        
+        :param data: DataFrame containing the data
+        :param prior: Prior distributions for parameters
+        :param max_iter: Maximum number of iterations for EM
+        :param tol: Convergence tolerance
+        """
+        # Initialize parameters
+        self._initialize_parameters(data, prior)
+        
+        log_likelihood_old = -np.inf
+        for iteration in range(max_iter):
+            # E-step
+            responsibilities = self._expectation_step(data)
+            
+            # M-step
+            self._maximization_step(data, responsibilities)
+            
+            # Compute log-likelihood
+            log_likelihood_new = self._compute_log_likelihood(data)
+            
+            # Check for convergence
+            if abs(log_likelihood_new - log_likelihood_old) < tol:
+                print(f"Converged after {iteration + 1} iterations")
+                break
+            
+            log_likelihood_old = log_likelihood_new
+        
+        if iteration == max_iter - 1:
+            print(f"Did not converge after {max_iter} iterations")
 
-    def _learn_structure(self, data: pd.DataFrame, allowed_parents: List[str]):
-        self.nodes = learn_structure(
-            data,
-            method=self.method,
-            max_parents=self.max_parents,
-            prior_edges=self.prior_edges,
-        )
-        for node in self.nodes.values():
-            node.parents = [
-                parent for parent in node.parents if parent.name in allowed_parents
-            ]
+    def _initialize_parameters(self, data: pd.DataFrame, prior: Dict[str, Any]):
+        for node in self.nodes:
+            parents = [edge[0] for edge in self.edges if edge[1] == node]
+            if not parents:
+                self.parameters[node] = {
+                    'mean': data[node].mean(),
+                    'std': data[node].std()
+                }
+            else:
+                X = data[parents]
+                y = data[node]
+                beta = np.linalg.inv(X.T @ X) @ X.T @ y
+                residuals = y - X @ beta
+                self.parameters[node] = {
+                    'beta': beta,
+                    'std': residuals.std()
+                }
 
-        # Enforce the structure according to the allowed_parents
-        for node_name, node in self.nodes.items():
-            node.parents = [
-                self.nodes[parent_name]
-                for parent_name in allowed_parents
-                if parent_name in self.nodes and parent_name in node.parents
-            ]
+    def _compute_log_likelihood(self, data: pd.DataFrame):
+        log_likelihood = 0
+        for node in self.nodes:
+            parents = [edge[0] for edge in self.edges if edge[1] == node]
+            if not parents:
+                log_likelihood += norm.logpdf(data[node], 
+                                              loc=self.parameters[node]['mean'], 
+                                              scale=self.parameters[node]['std']).sum()
+            else:
+                X = data[parents]
+                y = data[node]
+                mean = X @ self.parameters[node]['beta']
+                log_likelihood += norm.logpdf(y, loc=mean, scale=self.parameters[node]['std']).sum()
+        return log_likelihood
