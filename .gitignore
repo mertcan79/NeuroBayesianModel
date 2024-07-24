@@ -42,6 +42,7 @@ venv.bak/ssh-key-2024-07-20.key.pub
 archive/
 visuals/
 creds/
+notebooks/
 
 /src/main.ipynb
 

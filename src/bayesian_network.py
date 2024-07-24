@@ -1,23 +1,27 @@
+import json
+import os
+from typing import Dict, Any, Tuple, Callable, List
+from datetime import datetime
+from functools import lru_cache
+from joblib import Parallel, delayed
+import logging
+
 import pandas as pd
 import numpy as np
-from typing import Dict, Any, Tuple, Callable, List
-import logging
-from sklearn.model_selection import KFold
 from scipy import stats
-import copy
-from collections import deque
+import networkx as nx
+
+from sklearn.model_selection import KFold
+from sklearn.preprocessing import StandardScaler
+from sklearn.metrics import accuracy_score, precision_score, recall_score
+from sklearn.model_selection import cross_val_predict
+from sklearn.linear_model import LogisticRegression
 
 from .bayesian_node import BayesianNode, CategoricalNode
 from .structure_learning import learn_structure
 from .parameter_fitting import fit_parameters
 
-import networkx as nx
-import json
-import os
-from datetime import datetime
-from functools import lru_cache
-from joblib import Parallel, delayed
-import logging
+
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -31,13 +35,13 @@ class BayesianNetwork:
         self.categorical_columns = categorical_columns or []
         self.categories = categories or {}
         self.prior_edges = []  # Initialize prior_edges as an empty list
-        
+        self.data = None  # Add this line
+
         for col in self.categorical_columns:
             if col in self.categories:
                 self.nodes[col] = CategoricalNode(col, self.categories[col])
             else:
                 self.nodes[col] = CategoricalNode(col, [])  # Empty categories for now
-
 
     def to_dict(self):
         return {
@@ -89,9 +93,7 @@ class BayesianNetwork:
                 return [make_serializable(v) for v in obj]
             else:
                 return obj
-        
-        network_structure = self.explain_structure_extended()
-        results["network_structure"] = network_structure
+    
         
         if isinstance(self, HierarchicalBayesianNetwork):
             results["hierarchical_structure"] = self.explain_hierarchical_structure()
@@ -121,6 +123,8 @@ class BayesianNetwork:
         results["key_relationship_explanations"] = self.explain_key_relationships()
         results["performance_metrics"] = self.get_performance_metrics()
         results["unexpected_insights"] = self.get_unexpected_insights()
+
+        results["network_structure"] = self.explain_structure_extended()
 
         # Example individual for personalized recommendations
         example_individual = {
@@ -160,38 +164,16 @@ class BayesianNetwork:
         
         with open(file_path, 'w') as f:
             json.dump(serializable_results, f, indent=2)
-        
-
+    
     def write_summary_to_json(self, results: Dict[str, Any], filename: str = None):
         if filename is None:
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            filename = f"summary_{timestamp}.json"
+            filename = f"bayesian_network_summary_{timestamp}.json"
         
         log_folder = "logs"
         if not os.path.exists(log_folder):
             os.makedirs(log_folder)
         file_path = os.path.join(log_folder, filename)
-        
-        def _summarize_brain_stem_relationships(self, relationships):
-            if not relationships:
-                return "No brain stem relationship data available."
-            return {k: round(v, 3) for k, v in relationships.items()}
-
-        def _summarize_actionable_insights(self, insights):
-            if not insights:
-                return "No actionable insights available."
-            return insights[:3] if len(insights) > 3 else insights
-
-        def _summarize_personality_cognition(self, relationships):
-            if not relationships:
-                return "No personality-cognition relationship data available."
-            return {k: round(v, 3) for k, v in sorted(relationships.items(), key=lambda x: abs(x[1]), reverse=True)[:3]}
-
-        def _summarize_age_dependent_changes(self, changes):
-            if not changes:
-                return "No age-dependent relationship data available."
-            significant_changes = {k: round(v, 3) for k, v in changes.items() if abs(v) > 0.1}
-            return dict(sorted(significant_changes.items(), key=lambda x: abs(x[1]), reverse=True)[:5])
 
         summary = {
             "network_structure": self.explain_structure_extended(),
@@ -203,31 +185,22 @@ class BayesianNetwork:
             "categorical_variables": self.categorical_columns,
             "continuous_variables": [node for node in self.nodes if node not in self.categorical_columns],
             "key_findings": self.summarize_key_findings(),
-            "comparison_to_previous_studies": self.compare_to_previous_studies(),
             "future_research_directions": self.suggest_future_research(),
-            "non_technical_interpretation": self.interpret_results_non_technical()
-        }
-        
-        summary.update({
-            "key_brain_stem_relationships": self._summarize_brain_stem_relationships(results.get("brain_stem_relationships")),
-            "top_actionable_insights": self._summarize_actionable_insights(results.get("actionable_insights")),
             "key_personality_cognition_findings": self._summarize_personality_cognition(results.get("personality_cognition_relationships")),
             "significant_age_dependent_changes": self._summarize_age_dependent_changes(results.get("age_dependent_relationships")),
-        })
-
+        }
+        
         if isinstance(self, HierarchicalBayesianNetwork):
             summary["hierarchical_structure"] = self.explain_hierarchical_structure()
         
-        with open(file_path, 'w') as f:
-            json.dump(summary, f, indent=2)
+        try:
+            with open(file_path, 'w') as f:
+                json.dump(summary, f, indent=2)
+            print(f"Summary successfully written to {file_path}")
+        except Exception as e:
+            print(f"Error writing summary to file: {str(e)}")
         
 
-    def get_edges(self):
-        edges = []
-        for node_name, node in self.nodes.items():
-            for parent in node.parents:
-                edges.append((parent.name, node_name))
-        return edges   
         
     @lru_cache(maxsize=128)
     def sample_node(self, node_name: str, size: int = 1) -> np.ndarray:
@@ -243,6 +216,7 @@ class BayesianNetwork:
         return samples[node_name]
 
     def fit(self, data: pd.DataFrame, prior_edges: List[tuple] = None, progress_callback: Callable[[float], None] = None):
+        self.data = data
         try:
             for col in self.categorical_columns:
                 if col in self.nodes:
@@ -280,15 +254,26 @@ class BayesianNetwork:
             node_data = data[node_name]
             parent_data = data[parent_names] if parent_names else None
             
-            print(f"Fitting node: {node_name}")
-            print(f"Node data shape: {node_data.shape}")
-            print(f"Parent data: {'Present' if parent_data is not None else 'None (no parents)'}")
-            
             try:
-                node.fit(node_data, parent_data)
+                if isinstance(node, CategoricalNode):
+                    node.fit(node_data, parent_data)
+                else:
+                    # For continuous nodes, we'll use a simple linear regression
+                    if parent_data is not None:
+                        from sklearn.linear_model import LinearRegression
+                        model = LinearRegression().fit(parent_data, node_data)
+                        node.distribution = (model.intercept_, model.coef_)
+                    else:
+                        node.distribution = (node_data.mean(), node_data.std())
+                
+                # Mark the node as fitted
+                node.fitted = True
+                
             except Exception as e:
                 print(f"Error fitting node {node_name}: {str(e)}")
                 raise
+
+        print("Parameter fitting complete.")
 
     def preprocess_data(self, data: pd.DataFrame) -> pd.DataFrame:
         return data.apply(lambda col: pd.Categorical(col).codes if col.name in self.categorical_columns else col)
@@ -321,6 +306,13 @@ class BayesianNetwork:
             raise ValueError("Both nodes must exist in the network")
         self.nodes[child].parents.append(self.nodes[parent])
         self.nodes[parent].children.append(self.nodes[child])
+
+    def get_edges(self):
+        edges = []
+        for node_name, node in self.nodes.items():
+            for parent in node.parents:
+                edges.append((parent.name, node_name))
+        return edges   
 
     @lru_cache(maxsize=128)
     def _cached_node_log_likelihood(self, node_name, value, parent_values):
@@ -358,6 +350,7 @@ class BayesianNetwork:
         if isinstance(target.distribution, tuple):
             base_mean, base_std = target.distribution
             base_mean = np.mean(base_mean) if isinstance(base_mean, np.ndarray) else base_mean
+            base_std = np.mean(base_std) if isinstance(base_std, np.ndarray) else base_std
         else:
             base_mean, base_std = np.mean(target.distribution), np.std(target.distribution)
         
@@ -368,6 +361,7 @@ class BayesianNetwork:
                 if isinstance(node.distribution, tuple):
                     mean, std = node.distribution
                     mean = np.mean(mean) if isinstance(mean, np.ndarray) else mean
+                    std = np.mean(std) if isinstance(std, np.ndarray) else std
                 else:
                     mean, std = np.mean(node.distribution), np.std(node.distribution)
                 
@@ -378,7 +372,7 @@ class BayesianNetwork:
                 
                 if node in target.parents:
                     if isinstance(target.distribution, tuple):
-                        coef = target.distribution[0][target.parents.index(node) + 1]
+                        coef = target.distribution[1][target.parents.index(node)]
                         coef = np.mean(coef) if isinstance(coef, np.ndarray) else coef
                     else:
                         coef = 1
@@ -406,17 +400,29 @@ class BayesianNetwork:
 
     def get_key_relationships(self) -> List[Dict[str, Any]]:
         relationships = []
-        for node, parents in self.nodes.items():
-            for parent in parents:
-                strength = abs(self.compute_edge_strength(parent, node))
+        for node_name, node in self.nodes.items():
+            for parent in node.parents:
+                strength = abs(self.compute_edge_strength(parent.name, node_name))
                 relationships.append({
-                    "parent": parent,
-                    "child": node,
+                    "parent": parent.name,
+                    "child": node_name,
                     "strength": strength
                 })
         sorted_relationships = sorted(relationships, key=lambda x: x['strength'], reverse=True)
         top_10_percent = sorted_relationships[:max(1, len(sorted_relationships) // 10)]
-        return [{"parent": r["parent"].name, "child": r["child"], "strength": round(r["strength"], 2)} for r in top_10_percent]
+        return [{"parent": r["parent"], "child": r["child"], "strength": round(r["strength"], 2)} for r in top_10_percent]
+
+    def compute_edge_strength(self, parent_name: str, child_name: str) -> float:
+        parent_node = self.nodes[parent_name]
+        child_node = self.nodes[child_name]
+        
+        if isinstance(child_node.distribution, tuple) and len(child_node.distribution) == 2:
+            coefficients = child_node.distribution[1]
+            parent_index = child_node.parents.index(parent_node)
+            return abs(coefficients[parent_index])
+        else:
+            # If the distribution is not in the expected format, return a default value
+            return 0.0
 
     def get_novel_insights(self) -> List[str]:
         insights = []
@@ -426,11 +432,13 @@ class BayesianNetwork:
             insights.append(f"Unexpectedly high influence of {factor} on cognitive fluid composite (sensitivity: {value:.2f})")
         return insights
 
-    def get_model_performance(self) -> Dict[str, float]:
-        mean_ll, std_ll = self.cross_validate(self.data, k_folds=5)
+    def get_model_performance(self):
         return {
-            "mean_log_likelihood": round(mean_ll, 2),
-            "std_log_likelihood": round(std_ll, 2)
+            'accuracy': self.get_accuracy(),
+            'precision': self.get_precision(),
+            'recall': self.get_recall(),
+            'f1_score': self.get_f1_score(),
+            'auc_roc': self.get_auc_roc()
         }
 
     def explain_key_relationships(self):
@@ -468,18 +476,144 @@ class BayesianNetwork:
             "Accuracy (within 10% of true value)": np.mean(np.abs(self.y_true - self.y_pred) / self.y_true < 0.1)
     }
 
-    def get_age_specific_insights(self) -> List[str]:
-        young_data = self.data[self.data['Age'] < 30]
-        old_data = self.data[self.data['Age'] >= 30]
-        young_sensitivity = self.compute_sensitivity("CogFluidComp_Unadj", data=young_data)
-        old_sensitivity = self.compute_sensitivity("CogFluidComp_Unadj", data=old_data)
+    def get_accuracy(self):
+        if self.data is None:
+            return 0.0
+        X = self.data.drop(['CogFluidComp_Unadj', 'CogCrystalComp_Unadj'], axis=1)
+        y = self.data['CogFluidComp_Unadj']
+        y_binary = (y > y.median()).astype(int)
+        scaler = StandardScaler()
+        X_scaled = scaler.fit_transform(X)
+        model = LogisticRegression(random_state=42, max_iter=1000)
+        predictions = cross_val_predict(model, X_scaled, y_binary, cv=5)
+        return accuracy_score(y_binary, predictions)
+
+    def get_precision(self):
+        if self.data is None:
+            return 0.0
+        X = self.data.drop(['CogFluidComp_Unadj', 'CogCrystalComp_Unadj'], axis=1)
+        y = self.data['CogFluidComp_Unadj']  # Or whichever target variable we're predicting
+        y_binary = (y > y.median()).astype(int)  # Convert to binary classification
+        model = LogisticRegression(random_state=42)
+        predictions = cross_val_predict(model, X, y_binary, cv=5)
+        return precision_score(y_binary, predictions)
+
+    def get_recall(self):
+        if self.data is None:
+            return 0.0
+        X = self.data.drop(['CogFluidComp_Unadj', 'CogCrystalComp_Unadj'], axis=1)
+        y = self.data['CogFluidComp_Unadj']  # Or whichever target variable we're predicting
+        y_binary = (y > y.median()).astype(int)  # Convert to binary classification
+        model = LogisticRegression(random_state=42)
+        predictions = cross_val_predict(model, X, y_binary, cv=5)
+        return recall_score(y_binary, predictions)
+    
+    def get_clinical_insights(self):
+        insights = []
+        fluid_sensitivity = self.compute_sensitivity('CogFluidComp_Unadj')
+        crystal_sensitivity = self.compute_sensitivity('CogCrystalComp_Unadj')
+        
+        for feature, value in fluid_sensitivity.items():
+            if abs(value) > 0.1:
+                insights.append(f"{feature} has a significant impact on fluid cognitive abilities (sensitivity: {value:.2f})")
+        
+        for feature, value in crystal_sensitivity.items():
+            if abs(value) > 0.1:
+                insights.append(f"{feature} has a significant impact on crystallized cognitive abilities (sensitivity: {value:.2f})")
+        
+        return insights
+
+    def get_clinical_implications(self):
+        implications = []
+        sensitivity_fluid = self.compute_sensitivity('CogFluidComp_Unadj')
+        sensitivity_crystal = self.compute_sensitivity('CogCrystalComp_Unadj')
+        
+        for feature, value in sensitivity_fluid.items():
+            if abs(value) > 0.1:
+                implications.append(f"Changes in {feature} may significantly impact fluid cognitive abilities (sensitivity: {value:.2f}), suggesting potential for targeted interventions.")
+        
+        for feature, value in sensitivity_crystal.items():
+            if abs(value) > 0.1:
+                implications.append(f"Changes in {feature} may significantly impact crystallized cognitive abilities (sensitivity: {value:.2f}), indicating areas for potential cognitive preservation strategies.")
+        
+        if abs(sensitivity_fluid['Age']) > 0.1 or abs(sensitivity_crystal['Age']) > 0.1:
+            implications.append("Age has a substantial impact on cognitive abilities, emphasizing the need for age-specific cognitive interventions and preventive strategies.")
+        
+        return implications
+
+    def get_novel_insights(self):
+        insights = []
+        sensitivity_fluid = self.compute_sensitivity('CogFluidComp_Unadj')
+        sensitivity_crystal = self.compute_sensitivity('CogCrystalComp_Unadj')
+        
+        # Compare brain structure influences
+        brain_structures = [f for f in sensitivity_fluid.keys() if f.startswith('FS_')]
+        max_influence = max(brain_structures, key=lambda x: abs(sensitivity_fluid[x]))
+        insights.append(f"Unexpectedly high influence of {max_influence} on fluid cognitive abilities (sensitivity: {sensitivity_fluid[max_influence]:.2f}), suggesting a potential new area for cognitive research.")
+        
+        # Compare personality influences
+        if 'NEOFAC_O' in sensitivity_fluid and 'NEOFAC_C' in sensitivity_fluid:
+            if abs(sensitivity_fluid['NEOFAC_O']) > abs(sensitivity_fluid['NEOFAC_C']):
+                insights.append(f"Openness to experience shows a stronger relationship with fluid cognitive abilities (sensitivity: {sensitivity_fluid['NEOFAC_O']:.2f}) than conscientiousness (sensitivity: {sensitivity_fluid['NEOFAC_C']:.2f}), which could inform personality-based cognitive training approaches.")
+        
+        # Compare fluid vs crystallized influences
+        for feature in sensitivity_fluid.keys():
+            if feature in sensitivity_crystal:
+                if abs(sensitivity_fluid[feature]) > 2 * abs(sensitivity_crystal[feature]):
+                    insights.append(f"{feature} has a much stronger influence on fluid cognitive abilities (sensitivity: {sensitivity_fluid[feature]:.2f}) compared to crystallized abilities (sensitivity: {sensitivity_crystal[feature]:.2f}), suggesting different mechanisms for these cognitive domains.")
+        
+        return insights
+
+    def get_age_specific_insights(self):
+        if self.data is None:
+            return ["No data available for age-specific insights."]
         
         insights = []
-        for factor in set(young_sensitivity.keys()) & set(old_sensitivity.keys()):
-            diff = young_sensitivity[factor] - old_sensitivity[factor]
-            if abs(diff) > 0.1:  # Arbitrary threshold for significant difference
-                group = "younger" if diff > 0 else "older"
-                insights.append(f"{factor} has a stronger influence on cognitive fluid composite in {group} individuals")
+        young_data = self.data[self.data['Age'] < self.data['Age'].median()]
+        old_data = self.data[self.data['Age'] >= self.data['Age'].median()]
+        
+        young_model = BayesianNetwork(method=self.method, max_parents=self.max_parents, iterations=self.iterations, categorical_columns=self.categorical_columns)
+        old_model = BayesianNetwork(method=self.method, max_parents=self.max_parents, iterations=self.iterations, categorical_columns=self.categorical_columns)
+        
+        young_model.fit(young_data)
+        old_model.fit(old_data)
+        
+        young_sensitivity = young_model.compute_sensitivity('CogFluidComp_Unadj')
+        old_sensitivity = old_model.compute_sensitivity('CogFluidComp_Unadj')
+        
+        for feature in young_sensitivity.keys():
+            if abs(young_sensitivity[feature] - old_sensitivity[feature]) > 0.1:
+                if young_sensitivity[feature] > old_sensitivity[feature]:
+                    insights.append(f"{feature} has a stronger influence on fluid cognitive abilities in younger individuals (sensitivity difference: {young_sensitivity[feature] - old_sensitivity[feature]:.2f})")
+                else:
+                    insights.append(f"{feature} has a stronger influence on fluid cognitive abilities in older individuals (sensitivity difference: {old_sensitivity[feature] - young_sensitivity[feature]:.2f})")
+        
+        return insights
+
+    def get_gender_specific_insights(self):
+        if self.data is None:
+            return ["No data available for gender-specific insights."]
+        
+        insights = []
+        male_data = self.data[self.data['Gender'] == 0]  # Assuming 0 is male
+        female_data = self.data[self.data['Gender'] == 1]  # Assuming 1 is female
+        
+        male_model = BayesianNetwork(method=self.method, max_parents=self.max_parents, iterations=self.iterations, categorical_columns=self.categorical_columns)
+        female_model = BayesianNetwork(method=self.method, max_parents=self.max_parents, iterations=self.iterations, categorical_columns=self.categorical_columns)
+        
+        male_model.fit(male_data)
+        female_model.fit(female_data)
+        
+        male_sensitivity = male_model.compute_sensitivity('CogFluidComp_Unadj')
+        female_sensitivity = female_model.compute_sensitivity('CogFluidComp_Unadj')
+        
+        for feature in male_sensitivity.keys():
+            if abs(male_sensitivity[feature] - female_sensitivity[feature]) > 0.1:
+                if male_sensitivity[feature] > female_sensitivity[feature]:
+                    insights.append(f"{feature} has a stronger influence on fluid cognitive abilities in males (sensitivity difference: {male_sensitivity[feature] - female_sensitivity[feature]:.2f})")
+                else:
+                    insights.append(f"{feature} has a stronger influence on fluid cognitive abilities in females (sensitivity difference: {female_sensitivity[feature] - male_sensitivity[feature]:.2f})")
+        
         return insights
 
     def summarize_key_findings(self) -> str:
@@ -494,6 +628,27 @@ class BayesianNetwork:
         summary += f"4. {insights[0] if insights else 'No unexpected influences were found.'}\n"
         
         return summary
+
+    def _analyze_brain_stem_relationship(self, relationships):
+        if not relationships:
+            return "No brain stem relationship data available."
+        return {k: round(v, 3) for k, v in relationships.items()}
+
+    def _summarize_personality_cognition(self, relationships):
+        if not relationships:
+            return "No personality-cognition relationship data available."
+        return {k: round(v, 3) for k, v in sorted(relationships.items(), key=lambda x: abs(x[1]), reverse=True)[:3]}
+
+    def _summarize_brain_stem_relationships(self, relationships):
+        if not relationships:
+            return "No brain stem relationship data available."
+        return {k: round(v, 3) for k, v in relationships.items()}
+
+    def _summarize_age_dependent_changes(self, changes):
+        if not changes:
+            return "No age-dependent relationship data available."
+        significant_changes = {k: round(v, 3) for k, v in changes.items() if abs(v) > 0.1}
+        return dict(sorted(significant_changes.items(), key=lambda x: abs(x[1]), reverse=True)[:5])
 
     def suggest_future_research(self) -> List[str]:
         suggestions = [
@@ -517,6 +672,21 @@ class BayesianNetwork:
             "nodes": list(self.nodes.keys()),
             "edges": self.get_edges()
         }
+
+    def explain_structure_extended(self):
+        structure = {
+            "nodes": list(self.nodes.keys()),
+            "edges": self.get_edges()
+        }
+        for node_name, node in self.nodes.items():
+            structure[node_name] = {
+                "parents": [parent.name for parent in node.parents],
+                "children": [child.name for child in node.children],
+                "parameters": node.parameters if hasattr(node, 'parameters') else None,
+                "distribution": str(node.distribution) if hasattr(node, 'distribution') else None
+            }
+
+        return structure
 
     def get_unexpected_insights(self):
         insights = []
@@ -684,33 +854,18 @@ class BayesianNetwork:
 
     def get_confidence_intervals(self):
         ci_results = {}
-        for node, parents in self.network.nodes.items():
-            if parents:
-                X = self.data[[p.name for p in parents]]
-                y = self.data[node]
+        for node_name, node in self.nodes.items():
+            if node.parents:
+                X = self.data[[p.name for p in node.parents]]
+                y = self.data[node_name]
                 model = stats.linregress(X, y)
-                ci_results[node] = {
+                ci_results[node_name] = {
                     'coefficients': model.slope,
                     'ci_lower': model.slope - model.stderr * 1.96,
                     'ci_upper': model.slope + model.stderr * 1.96,
                     'p_value': model.pvalue
                 }
         return ci_results
-
-    def explain_structure_extended(self):
-        structure = {
-            "nodes": list(self.nodes.keys()),
-            "edges": self.get_edges()
-        }
-
-        for node_name, node in self.nodes.items():
-            structure[node_name] = {
-                "parents": [parent.name for parent in node.parents],
-                "parameters": node.parameters if hasattr(node, 'parameters') else None,
-                "distribution": str(node.distribution) if hasattr(node, 'distribution') else None
-            }
-
-        return structure
 
     def fit_transform(self, data: pd.DataFrame, prior_edges: List[tuple] = None, progress_callback: Callable[[float], None] = None):
         self.fit(data, prior_edges=prior_edges, progress_callback=progress_callback)
