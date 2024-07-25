@@ -16,10 +16,13 @@ class BayesianModel:
     def __init__(self, method='k2', max_parents=2, iterations=300, categorical_columns=None):
         self.network = BayesianNetwork(method=method, max_parents=max_parents, iterations=iterations, categorical_columns=categorical_columns)
         self.data = None
-        self.parameteres = None
+        self.parameters = None
+        self.method = method
+        self.max_parents = max_parents
+        self.iterations = iterations
 
     def fit(self, data: pd.DataFrame, prior_edges: List[tuple] = None, progress_callback: Callable[[float], None] = None):
-        self.data = None
+        self.data = data
         """Fit the Bayesian network to the data."""
         try:
             preprocessed_data = self.preprocess_data(data)
@@ -27,7 +30,13 @@ class BayesianModel:
             # Learn structure
             if progress_callback:
                 progress_callback(0.3)
-            learn_structure(preprocessed_data, prior_edges)
+            self.network.structure = learn_structure(
+                preprocessed_data,
+                method=self.method,
+                max_parents=self.max_parents,
+                iterations=self.iterations,
+                prior_edges=prior_edges
+            )
             
             # Fit parameters
             if progress_callback:
