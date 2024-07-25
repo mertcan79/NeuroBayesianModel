@@ -61,24 +61,74 @@ class BayesianNetwork:
         )
         self.edges = [(parent.name, node.name) for node in self.nodes.values() for parent in node.parents]
 
-    def _initialize_parameters(self, data: pd.DataFrame, prior: Dict[str, Any]):
+    def _initialize_parameters(self, data: pd.DataFrame, prior: Dict[str, Any] = None):
+        if prior is None:
+            prior = {}
+            
         for node in self.nodes:
+            node_obj = self.nodes[node]
             parents = self.get_parents(node)
+
+            # Parameters for nodes without parents
             if not parents:
-                self.parameters[node] = {
-                    'mean': data[node].mean(),
-                    'std': data[node].std()
-                }
-                self.nodes[node].distribution = norm(loc=self.parameters[node]['mean'], scale=self.parameters[node]['std'])
+                if isinstance(node_obj, CategoricalNode):
+                    # For categorical nodes, we need to specify a distribution or sampling method
+                    if node in prior:
+                        # Use prior if available
+                        self.parameters[node] = prior[node]
+                    else:
+                        # Default initialization for categorical nodes
+                        self.parameters[node] = {
+                            'categories': node_obj.categories
+                        }
+                    # You might need to initialize or set distribution for categorical nodes differently
+                    # e.g., setting prior probabilities for categories if needed
+                    
+                else:  # Continuous node
+                    if node in prior:
+                        # Use prior if available
+                        self.parameters[node] = prior[node]
+                    else:
+                        # Default initialization for continuous nodes
+                        self.parameters[node] = {
+                            'mean': data[node].mean(),
+                            'std': data[node].std()
+                        }
+                    node_obj.distribution = norm(loc=self.parameters[node]['mean'], scale=self.parameters[node]['std'])
+            
+            # Parameters for nodes with parents
             else:
                 X = data[parents]
                 y = data[node]
-                beta = np.linalg.inv(X.T @ X) @ X.T @ y
-                residuals = y - X @ beta
-                self.parameters[node] = {
-                    'beta': beta,
-                    'std': residuals.std()
-                }
+                
+                if isinstance(node_obj, CategoricalNode):
+                    # Categorical nodes with parents might require special handling
+                    # This depends on your model, here’s a simple example of initializing a logistic regression
+                    if node in prior:
+                        self.parameters[node] = prior[node]
+                    else:
+                        # For categorical, logistic regression coefficients can be set
+                        # Example: Initialize with zero coefficients or from data if logistic regression
+                        self.parameters[node] = {
+                            'beta': np.zeros(X.shape[1]),  # Assuming logistic regression
+                            'scale': 1.0
+                        }
+                    # Initialize logistic regression or other appropriate model
+                    
+                else:  # Continuous node
+                    if node in prior:
+                        self.parameters[node] = prior[node]
+                    else:
+                        # Use linear regression to determine parameters
+                        beta = np.linalg.pinv(X.T @ X) @ X.T @ y
+                        residuals = y - X @ beta
+                        self.parameters[node] = {
+                            'beta': beta,
+                            'std': residuals.std()
+                        }
+                    # Update distribution if required (e.g., normal distribution for continuous)
+                    node_obj.distribution = norm(loc=self.parameters[node]['beta'].mean(), scale=self.parameters[node]['std'])
+
 
     def _expectation_step(self, data: pd.DataFrame):
         responsibilities = {}

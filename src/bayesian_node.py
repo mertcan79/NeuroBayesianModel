@@ -9,10 +9,12 @@ class BayesianNode:
         self.name = name
         self.parents: List['BayesianNode'] = []
         self.children: List['BayesianNode'] = []
-        self.parameters = None
+        self.params = None
         self.distribution = None
         self.is_categorical = False
         self.categories = None
+        self.transform = None  
+        self.inverse_transform = None  
 
     def __eq__(self, other):
         if isinstance(other, BayesianNode):
@@ -27,14 +29,14 @@ class BayesianNode:
             'name': self.name,
             'parents': [parent.name for parent in self.parents],
             'children': [child.name for child in self.children],
-            'parameters': self.parameters,
+            'params': self.params,
             'distribution': str(self.distribution) if self.distribution else None
         }
 
     @classmethod
     def from_dict(cls, data):
         node = cls(data['name'])
-        node.parameters = data['parameters']
+        node.params = data['params']
         node.distribution = eval(data['distribution']) if data['distribution'] else None
         return node
 
@@ -46,8 +48,8 @@ class BayesianNode:
         if child not in self.children:
             self.children.append(child)
 
-    def set_parameters(self, parameters):
-        self.parameters = parameters
+    def set_params(self, params):
+        self.params = params
 
     def set_distribution(self, distribution):
         self.distribution = distribution
@@ -55,6 +57,23 @@ class BayesianNode:
     def set_categorical(self, is_categorical: bool, categories: List = None):
         self.is_categorical = is_categorical
         self.categories = categories
+
+    def set_transform(self, transform, inverse_transform):
+        """Set the transformation and its inverse."""
+        self.transform = transform
+        self.inverse_transform = inverse_transform
+
+    def apply_transform(self, data):
+        """Apply transformation if set."""
+        if self.transform:
+            return self.transform(data)
+        return data
+
+    def apply_inverse_transform(self, data):
+        """Apply inverse transformation if set."""
+        if self.inverse_transform:
+            return self.inverse_transform(data)
+        return data
 
     def sample(self, size: int, parent_values: Optional[np.ndarray] = None) -> np.ndarray:
         if self.distribution is None:
@@ -166,14 +185,14 @@ class BayesianNode:
         return f"BayesianNode(name={self.name}, parents={[p.name for p in self.parents]}, children={[c.name for c in self.children]})"
 
 class CategoricalNode(BayesianNode):
-    def __init__(self, name, categories, parameters):
+    def __init__(self, name, categories, params):
         super().__init__(name)
         self.name = name
         self.categories = list(range(len(categories)))  # Use integer codes
         self.original_categories = categories
         self.distribution = stats.multinomial
         self.cpt = None
-        self.parameters = parameters
+        self.params = params
 
     def to_dict(self):
         base_dict = super().to_dict()
@@ -186,7 +205,7 @@ class CategoricalNode(BayesianNode):
 
     @classmethod
     def from_dict(cls, data):
-        node = cls(data['name'], data['categories'], data['parameters'])
+        node = cls(data['name'], data['categories'], data['params'])
         node.cpt = np.array(data['cpt']) if data['cpt'] is not None else None
         return node
 
@@ -206,7 +225,7 @@ class CategoricalNode(BayesianNode):
         if parent_data is None or parent_data.size == 0:
             counts = np.bincount(data, minlength=len(self.categories))
             self.cpt = counts / np.sum(counts)
-            self.parameters = {"p": self.cpt}
+            self.params = {"p": self.cpt}
         else:
             parent_combinations = np.array(np.meshgrid(*[range(len(set(parent_data[:, col]))) for col in range(parent_data.shape[1])])).T.reshape(-1, parent_data.shape[1])
             self.cpt = np.zeros((len(parent_combinations), len(self.categories)))
@@ -215,7 +234,7 @@ class CategoricalNode(BayesianNode):
                 counts = np.bincount(data[mask], minlength=len(self.categories))
                 self.cpt[i] = counts / np.sum(counts)
 
-            self.parameters = {"cpt": self.cpt}
+            self.params = {"cpt": self.cpt}
 
     def log_probability(self, value, parent_values=None):
         if self.cpt is None:

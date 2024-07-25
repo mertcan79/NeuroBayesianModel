@@ -9,7 +9,7 @@ logger = logging.getLogger()
 logger.setLevel(logging.WARNING)  # Set to WARNING to suppress DEBUG and INFO logs
 
 class Inference:
-    def __init__(self, nodes: Dict[str, Node]=None):
+    def __init__(self, nodes: Dict[str, BayesianNode]):
         self.nodes = nodes
     
     def set_nodes(self, nodes):
@@ -19,13 +19,17 @@ class Inference:
         return self.nodes[node_name].parents if self.nodes[node_name].parents else []
     
     def sample_node(self, node_name: str, size: int = 1) -> np.ndarray:
+        if node_name not in self.nodes:
+            raise ValueError(f"Node {node_name} not found in the inference object.")
+        
         node = self.nodes[node_name]
         if not node.parents:
             if isinstance(node, CategoricalNode):
                 return node.sample(size)
             elif node.distribution is not None:
-                samples = node.distribution.rvs(size=size, **node.params)
-                return node.inverse_transform(samples)
+                params = node.params if node.params is not None else {}
+                samples = node.distribution.rvs(size=size, **params)
+                return node.apply_inverse_transform(samples)
             else:
                 raise ValueError(f"No distribution set for node {node_name}")
         else:
@@ -40,7 +44,7 @@ class Inference:
                 scale = node.params.get("scale", 1.0)
                 noise = np.random.normal(0, scale, size)
                 samples = loc + noise
-                return node.inverse_transform(samples)
+                return node.apply_inverse_transform(samples)
             
     def log_likelihood(self, nodes, data):
         total_ll = 0
