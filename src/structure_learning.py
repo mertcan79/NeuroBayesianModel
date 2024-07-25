@@ -8,20 +8,9 @@ from bayesian_node import BayesianNode, CategoricalNode
 
 logger = logging.getLogger(__name__)
 
-def learn_structure(data: pd.DataFrame, method: str = 'k2', max_parents: int = 2, iterations: int = 300, prior_edges: List[tuple] = None) -> Dict[str, BayesianNode]:
-    """
-    Learn the structure of a Bayesian Network from data.
-
-    :param data: DataFrame containing the data
-    :param method: Structure learning method ('hill_climb' or 'k2')
-    :param max_parents: Maximum number of parents for any node
-    :param iterations: Maximum number of iterations for the K2 algorithm
-    :param prior_edges: List of tuples representing prior edges to include in the network
-    :return: Dictionary of BayesianNode objects representing the learned network structure
-    """
+def learn_structure(data: pd.DataFrame, method: str = 'k2', max_parents: int = 2, iterations: int = 300, prior_edges: List[tuple] = None) -> List[Tuple[str, str]]:
     try:
         if method == 'hill_climb':
-            # Existing hill_climb code
             raise ValueError("Hill climb method is not yet implemented in this function.")
         
         elif method == 'k2':
@@ -35,19 +24,15 @@ def learn_structure(data: pd.DataFrame, method: str = 'k2', max_parents: int = 2
                 prior_edges=prior_edges_dict
             )
 
-            # Convert pgmpy model to our custom format
-            nodes = {}
-            for node in estimated_model:
-                nodes[node] = BayesianNode(node)
+            # Convert the estimated model to a list of edges
+            edges = []
+            for node_name, node in estimated_model.items():
+                for parent in node.parents:
+                    edges.append((parent.name, node_name))
 
-            for node, node_obj in nodes.items():
-                for parent in node_obj.parents:
-                    nodes[parent].add_child(node_obj)
-                    node_obj.add_parent(nodes[parent])
-
-            logger.info(f"Structure learning complete. Learned {len(nodes)} nodes and {len(estimated_model)} edges.")
+            logger.info(f"Structure learning complete. Learned {len(edges)} edges.")
             
-            return nodes
+            return edges
 
         else:
             raise ValueError(f"Unsupported method: {method}. Supported methods are 'hill_climb' and 'k2'.")
@@ -56,49 +41,32 @@ def learn_structure(data: pd.DataFrame, method: str = 'k2', max_parents: int = 2
         logger.error(f"Error in structure learning: {str(e)}")
         raise
 
-def k2_algorithm(
-    data: pd.DataFrame,
-    max_parents: int,
-    prior_edges: Dict[Tuple[str, str], float] = None,
-    allowed_connections: List[Tuple[str, str]] = None,
-) -> Dict[str, BayesianNode]:
-    nodes = {node: BayesianNode(node) for node in data.columns}
-    node_order = list(data.columns)
-
-    for i, node in enumerate(node_order):
-        parents = []
-        old_score = score_node(data, node, parents, prior_edges, allowed_connections)
-
-        while len(parents) < max_parents:
-            best_new_parent = None
-            best_new_score = old_score
-
-            for potential_parent in node_order[:i]:
-                if potential_parent not in parents:
-                    if (
-                        allowed_connections
-                        and (potential_parent, node) not in allowed_connections
-                    ):
-                        continue
-                    new_parents = parents + [potential_parent]
-                    new_score = score_node(
-                        data, node, new_parents, prior_edges, allowed_connections
-                    )
-
-                    if new_score > best_new_score:
-                        best_new_parent = potential_parent
-                        best_new_score = new_score
-
-            if best_new_parent is None:
+def k2_algorithm(data, max_parents, prior_edges=None):
+    nodes = {column: BayesianNode(column) for column in data.columns}
+    
+    for node_name in data.columns:
+        best_parents = []
+        best_score = score_node(data, node_name, [])
+        
+        while len(best_parents) < max_parents:
+            new_parent = None
+            new_score = best_score
+            
+            for potential_parent in data.columns:
+                if potential_parent != node_name and potential_parent not in best_parents:
+                    score = score_node(data, node_name, best_parents + [potential_parent])
+                    if score > new_score:
+                        new_parent = potential_parent
+                        new_score = score
+            
+            if new_parent is None:
                 break
-
-            parents.append(best_new_parent)
-            old_score = best_new_score
-
-        nodes[node].parents = [nodes[p] for p in parents]
-        for parent in parents:
-            nodes[parent].children.append(nodes[node])
-
+            
+            best_parents.append(new_parent)
+            best_score = new_score
+        
+        nodes[node_name].parents = [nodes[parent] for parent in best_parents]
+    
     return nodes
 
 def score_node(

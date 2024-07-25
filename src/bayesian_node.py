@@ -8,6 +8,7 @@ from scipy import stats
 class BayesianNode:
     def __init__(self, name: str, distribution=None, parents=None):
         self.name = name
+        self.parents = parents if parents else []
         self.params = None
         self.distribution = distribution
         self.is_categorical = False
@@ -15,7 +16,6 @@ class BayesianNode:
         self.transform = None  
         self.inverse_transform = None  
         self.fitted = False
-        self.parents = parents if parents else []
         self.children = []
 
     def __repr__(self):
@@ -68,9 +68,10 @@ class BayesianNode:
         else:
             return self.distribution
 
-    def set_categorical(self, is_categorical: bool, categories: List = None):
-        self.is_categorical = is_categorical
-        self.categories = categories
+    def set_categorical(self, categories):
+        """Set the node as categorical and define its categories."""
+        self.is_categorical = True
+        self.categories = list(categories)
 
     def set_transform(self, transform, inverse_transform):
         """Set the transformation and its inverse."""

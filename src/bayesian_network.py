@@ -10,6 +10,7 @@ import numpy as np
 from scipy.stats import norm, multivariate_normal
 import networkx as nx
 import statsmodels.api as sm
+from scipy.stats import chi2_contingency
 
 from bayesian_node import BayesianNode, CategoricalNode, Node
 from structure_learning import learn_structure
@@ -26,7 +27,7 @@ class BayesianNetwork:
         self.iterations = iterations
         self.categorical_columns = categorical_columns or []
         self.nodes = {}
-        self.edges = {}
+        self.edges = []  # Change this from {} to []
         self.data = None
         self.parameters = {}
         self.inference = None
@@ -70,140 +71,60 @@ class BayesianNetwork:
             if parent_node not in child_node.parents:
                 child_node.parents.append(parent_node)
     
-    # Debug print
-    for node_name, node in self.nodes.items():
-        print(f"Node: {node_name}")
-        print(f"  Parents: {[p.name for p in node.parents]}")
-        print(f"  Children: {[c.name for c in node.children]}")
-
-    def _initialize_parameters(self, data: pd.DataFrame, prior=None):
-        """
-        Initialize the parameters for all nodes in the Bayesian network.
-        
-        Args:
-            data (pd.DataFrame): The data used to initialize parameters.
-            prior (Dict[str, Any], optional): Prior information for the parameters.
-        """
-        # Define prior defaults
-        default_prior = {
-            'mean': 0.0,
-            'std': 1.0,
-            'alpha': 1.0,
-            'beta': 1.0
-        }
-
-        # Iterate over all nodes
+        # Debug print
         for node_name, node in self.nodes.items():
-            # Extract node data
-            node_data = data[node_name]
-            parent_names = [parent.name for parent in node.parents]
-            parent_data = data[parent_names] if parent_names else None
-            
-            # Initialize parameters based on node type
-            if isinstance(node, CategoricalNode):
-                # For categorical nodes, use a Multinomial distribution
-                counts = node_data.value_counts()
-                probs = counts / counts.sum()
-                node.distribution = probs.to_dict()  # Store the probabilities
-            else:
-                # For continuous nodes, initialize using regression or basic statistics
-                if parent_data is not None:
-                    # Simple Linear Regression if there are parent variables
-                    from sklearn.linear_model import LinearRegression
-                    model = LinearRegression()
-                    model.fit(parent_data, node_data)
-                    node.distribution = (model.intercept_, model.coef_)
-                else:
-                    # Assume normal distribution if no parents
-                    mean = node_data.mean()
-                    std = node_data.std() if node_data.std() != 0 else 1.0  # Avoid zero std
-                    node.distribution = (mean, std)
-            
-            # Apply prior if provided
-            if prior and node_name in prior:
-                prior_info = prior[node_name]
-                if isinstance(node, CategoricalNode):
-                    # Prior for categorical node could be a Dirichlet prior for example
-                    pass
-                else:
-                    # For continuous nodes, you might adjust mean and std based on prior
-                    mean_prior = prior_info.get('mean', default_prior['mean'])
-                    std_prior = prior_info.get('std', default_prior['std'])
-                    node.distribution = (mean_prior, std_prior)
-
-            # Mark the node as fitted
-            node.fitted = True
-
-        print("Parameter initialization complete.")
+            print(f"Node: {node_name}")
+            print(f"  Parents: {[p.name for p in node.parents]}")
+            print(f"  Children: {[c.name for c in node.children]}")
 
     def _initialize_parameters(self, data: pd.DataFrame, prior: Dict[str, Any] = None):
         if prior is None:
             prior = {}
-            
-        for node in self.nodes:
-            node_obj = self.nodes[node]
-            parents = self.get_parents(node)
+        
+        for node_name, node in self.nodes.items():
+            parents = self.get_parents(node_name)
 
-            # Parameters for nodes without parents
-            if not parents:
-                if isinstance(node_obj, CategoricalNode):
-                    # For categorical nodes, we need to specify a distribution or sampling method
-                    if node in prior:
-                        # Use prior if available
-                        self.parameters[node] = prior[node]
-                    else:
-                        # Default initialization for categorical nodes
-                        self.parameters[node] = {
-                            'categories': node_obj.categories
-                        }
-                    # You might need to initialize or set distribution for categorical nodes differently
-                    # e.g., setting prior probabilities for categories if needed
-                    
-                else:  # Continuous node
-                    if node in prior:
-                        # Use prior if available
-                        self.parameters[node] = prior[node]
-                    else:
-                        # Default initialization for continuous nodes
-                        self.parameters[node] = {
-                            'mean': data[node].mean(),
-                            'std': data[node].std()
-                        }
-                    node_obj.distribution = norm(loc=self.parameters[node]['mean'], scale=self.parameters[node]['std'])
-            
-            # Parameters for nodes with parents
+            if node_name in self.categorical_columns:
+                node.set_categorical(data[node_name].unique())
+                counts = data[node_name].value_counts()
+                self.parameters[node_name] = {
+                    'categories': counts.index.tolist(),
+                    'probabilities': (counts / counts.sum()).to_dict()
+                }
+                node.distribution = self.parameters[node_name]['probabilities']
             else:
-                X = data[parents]
-                y = data[node]
-                
-                if isinstance(node_obj, CategoricalNode):
-                    # Categorical nodes with parents might require special handling
-                    # This depends on your model, here’s a simple example of initializing a logistic regression
-                    if node in prior:
-                        self.parameters[node] = prior[node]
-                    else:
-                        # For categorical, logistic regression coefficients can be set
-                        # Example: Initialize with zero coefficients or from data if logistic regression
-                        self.parameters[node] = {
-                            'beta': np.zeros(X.shape[1]),  # Assuming logistic regression
-                            'scale': 1.0
-                        }
-                    # Initialize logistic regression or other appropriate model
-                    
-                else:  # Continuous node
-                    if node in prior:
-                        self.parameters[node] = prior[node]
-                    else:
-                        # Use linear regression to determine parameters
-                        beta = np.linalg.pinv(X.T @ X) @ X.T @ y
-                        residuals = y - X @ beta
-                        self.parameters[node] = {
-                            'beta': beta,
-                            'std': residuals.std()
-                        }
-                    # Update distribution if required (e.g., normal distribution for continuous)
-                    node_obj.distribution = norm(loc=self.parameters[node]['beta'].mean(), scale=self.parameters[node]['std'])
+                # Continuous node
+                if not parents:
+                    self.parameters[node_name] = {
+                        'mean': data[node_name].mean(),
+                        'std': data[node_name].std()
+                    }
+                    node.distribution = norm(loc=self.parameters[node_name]['mean'], 
+                                            scale=self.parameters[node_name]['std'])
+                else:
+                    X = data[parents]
+                    y = data[node_name]
+                    X = sm.add_constant(X)
+                    model = sm.OLS(y, X).fit()
+                    self.parameters[node_name] = {
+                        'coefficients': model.params.values,
+                        'std': model.resid.std()
+                    }
+                    node.distribution = norm(loc=0, scale=self.parameters[node_name]['std'])
 
+            if parents:
+                if node.is_categorical:
+                    # For categorical nodes with parents, we'll use a simple conditional probability table
+                    self.parameters[node_name]['cpt'] = {}
+                    for parent_values, group in data.groupby(parents):
+                        counts = group[node_name].value_counts()
+                        probs = counts / counts.sum()
+                        self.parameters[node_name]['cpt'][parent_values] = probs.to_dict()
+                else:
+                    # The distribution for continuous nodes with parents is already set above
+                    pass
+
+        print("Parameter initialization complete.")
 
     def _expectation_step(self, data: pd.DataFrame):
         responsibilities = {}
@@ -303,7 +224,8 @@ class BayesianNetwork:
     def add_edge(self, parent, child):
         if parent not in self.nodes or child not in self.nodes:
             raise ValueError("Both nodes must exist in the network")
-        self.edges.append((parent, child))
+        if (parent, child) not in self.edges:
+            self.edges.append((parent, child))
         self.nodes[child].parents.append(self.nodes[parent])
         self.nodes[parent].children.append(self.nodes[child])
 
@@ -359,43 +281,13 @@ class BayesianNetwork:
             'parameters': self.parameters
         }
 
-    @classmethod
-    def from_dict(cls, data):
-        network = cls(
-            method=data['method'],
-            max_parents=data['max_parents'],
-            iterations=data['iterations'],
-            categorical_columns=data['categorical_columns']
-        )
-        network.nodes = {name: BayesianNode.from_dict(node_data) for name, node_data in data['nodes'].items()}
+    @staticmethod
+    def from_dict(data: Dict[str, Any]) -> 'BayesianNetwork':
+        network = BayesianNetwork()
+        network.nodes = data['nodes']
         network.edges = data['edges']
         network.parameters = data['parameters']
         return network
-
-    def compute_sensitivity(self, target_node_name: str, num_samples: int = 1000) -> Dict[str, float]:
-        if target_node_name not in self.nodes:
-            raise ValueError(f"Node {target_node_name} not found in the network.")
-
-        # Ensure inference is using the current nodes
-        self.inference.nodes = self.nodes
-
-        # Sample data for the target node
-        target_samples = self.inference.sample_node(target_node_name, num_samples)
-        
-        # Compute sensitivity
-        sensitivities = {}
-        for node_name, node in self.nodes.items():
-            if node_name == target_node_name:
-                continue
-            
-            # Sample for other nodes
-            other_samples = self.inference.sample_node(node_name, num_samples)
-            
-            # Compute sensitivity (example: mean difference or correlation)
-            sensitivity = np.mean(target_samples) - np.mean(other_samples)
-            sensitivities[node_name] = sensitivity
-        
-        return sensitivities
     
     def get_key_relationships(self) -> List[Dict[str, Any]]:
         relationships = []
@@ -548,6 +440,28 @@ class BayesianNetwork:
         for edge in self.edges:
             edge_probabilities[edge] = self.compute_edge_probability(edge)
         return edge_probabilities
+
+def compute_sensitivity(network: BayesianNetwork, target_node_name: str, num_samples: int = 1000) -> Dict[str, float]:
+    if target_node_name not in network.nodes:
+        raise ValueError(f"Node {target_node_name} not found in the network.")
+    
+    # Sample data for the target node
+    target_samples = inference.sample_node(target_node_name, num_samples)
+    
+    # Compute sensitivity
+    sensitivities = {}
+    for node_name, node in network.nodes.items():
+        if node_name == target_node_name:
+            continue
+        
+        # Sample for other nodes
+        other_samples = inference.sample_node(node_name, num_samples)
+        
+        # Compute sensitivity (example: mean difference or correlation)
+        sensitivity = np.mean(target_samples) - np.mean(other_samples)
+        sensitivities[node_name] = sensitivity
+    
+    return sensitivities
 
 class HierarchicalBayesianNetwork(BayesianNetwork):
     def __init__(self, levels: List[str], *args, **kwargs):

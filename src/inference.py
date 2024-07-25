@@ -21,11 +21,23 @@ class Inference:
         node = self.nodes[node_name]
         distribution = node.distribution
         
-        if hasattr(distribution, 'rvs'):
-            # For frozen distributions, use the rvs method to sample
+        if distribution is None:
+            # Handle categorical nodes or nodes without a set distribution
+            if node.is_categorical:
+                categories = node.categories
+                probabilities = node.probabilities if hasattr(node, 'probabilities') else None
+                if probabilities is None:
+                    # If probabilities are not set, assume uniform distribution
+                    probabilities = [1/len(categories)] * len(categories)
+                return np.random.choice(categories, size=size, p=probabilities)
+            else:
+                # For continuous nodes without a distribution, return the mean or 0
+                return np.full(size, getattr(node, 'mean', 0))
+        
+        # Check if the distribution is a frozen distribution from scipy.stats
+        if isinstance(distribution, rv_continuous) or isinstance(distribution, rv_discrete):
             return distribution.rvs(size=size)
         
-        # Handle other distribution types as needed
         if isinstance(distribution, tuple) and len(distribution) == 2:
             # Example for Normal distribution
             mean, std_dev = distribution
@@ -33,8 +45,6 @@ class Inference:
         
         # Add handling for other distribution types as needed
         raise ValueError(f"Unsupported distribution type for node {node_name}: {type(distribution).__name__}")
-
-
         
     def __repr__(self):
         return f"Inference(nodes={list(self.nodes.keys())})"
