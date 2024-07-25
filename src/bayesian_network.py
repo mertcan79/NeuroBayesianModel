@@ -11,10 +11,10 @@ from scipy.stats import norm, multivariate_normal
 import networkx as nx
 import statsmodels.api as sm
 
-from bayesian_node import BayesianNode, CategoricalNode
+from bayesian_node import BayesianNode, CategoricalNode, Node
 from structure_learning import learn_structure
 from parameter_fitting import fit_parameters
-from inference import sample_node
+from inference import Inference
 
 logging.basicConfig(level=logging.ERROR)
 logger = logging.getLogger(__name__)
@@ -29,11 +29,13 @@ class BayesianNetwork:
         self.edges = []
         self.data = None
         self.parameters = {}
+        self.inference = Inference()
 
     def fit(self, data: pd.DataFrame, prior: Dict[str, Any] = None, max_iter: int = 100, tol: float = 1e-6):
         self.data = data
         self._learn_structure(data)
         self._initialize_parameters(data, prior)
+        self.inference.set_nodes(self.nodes)
         
         log_likelihood_old = -np.inf
         for iteration in range(max_iter):
@@ -249,24 +251,27 @@ class BayesianNetwork:
         if target_node_name not in self.nodes:
             raise ValueError(f"Node {target_node_name} not found in the network.")
 
-        try:
-            target_samples = self.sample_node(target_node_name, num_samples)
-        except Exception as e:
-            raise ValueError(f"Error sampling target node {target_node_name}: {str(e)}")
+        # Ensure inference is using the current nodes
+        self.inference.nodes = self.nodes
 
-        sensitivity = {}
-        for node_name in self.nodes:
+        # Sample data for the target node
+        target_samples = self.inference.sample_node(target_node_name, num_samples)
+        
+        # Compute sensitivity
+        sensitivities = {}
+        for node_name, node in self.nodes.items():
             if node_name == target_node_name:
                 continue
-
-            try:
-                node_samples = self.sample_node(node_name, num_samples)
-                sensitivity[node_name] = np.corrcoef(target_samples, node_samples)[0, 1]
-            except Exception as e:
-                print(f"Warning: Error computing sensitivity for node {node_name}: {str(e)}")
-
-        return sensitivity
-
+            
+            # Sample for other nodes
+            other_samples = self.inference.sample_node(node_name, num_samples)
+            
+            # Compute sensitivity (example: mean difference or correlation)
+            sensitivity = np.mean(target_samples) - np.mean(other_samples)
+            sensitivities[node_name] = sensitivity
+        
+        return sensitivities
+    
     def get_key_relationships(self) -> List[Dict[str, Any]]:
         relationships = []
         for node_name, node in self.nodes.items():

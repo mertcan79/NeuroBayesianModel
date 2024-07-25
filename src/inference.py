@@ -1,7 +1,7 @@
 import numpy as np
 import pandas as pd
-from typing import Dict, Any
-from bayesian_node import BayesianNode, CategoricalNode
+from typing import Dict, Any, List
+from bayesian_node import BayesianNode, CategoricalNode, Node
 import logging
 
 # Set up logging configuration
@@ -9,9 +9,15 @@ logger = logging.getLogger()
 logger.setLevel(logging.WARNING)  # Set to WARNING to suppress DEBUG and INFO logs
 
 class Inference:
-    def __init__(self):
-        self.nodes = []
+    def __init__(self, nodes: Dict[str, Node]=None):
+        self.nodes = nodes
+    
+    def set_nodes(self, nodes):
+        self.nodes = nodes
 
+    def get_parents(self, node_name: str) -> List[str]:
+        return self.nodes[node_name].parents if self.nodes[node_name].parents else []
+    
     def sample_node(self, node_name: str, size: int = 1) -> np.ndarray:
         node = self.nodes[node_name]
         if not node.parents:
@@ -70,7 +76,7 @@ class Inference:
     def gibbs_sampling(self, observed: Dict[str, Any], num_samples: int) -> pd.DataFrame:
         samples = {node: [] for node in self.nodes}
         current_sample = {node: np.random.choice(self.nodes[node].categories) if isinstance(self.nodes[node], CategoricalNode)
-                        else np.random.normal(size=1)[0] for node in self.nodes}
+                          else np.random.normal(size=1)[0] for node in self.nodes}
         
         for i in range(num_samples):
             for node in self.nodes:

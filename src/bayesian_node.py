@@ -234,3 +234,5 @@ class CategoricalNode(BayesianNode):
         else:
             parent_index = np.ravel_multi_index(parent_samples, [len(set(parent_samples[i])) for i in range(len(parent_samples))])
             return self.cpt[parent_index]
+
+Node = Union[BayesianNode, CategoricalNode]
