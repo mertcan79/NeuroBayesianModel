@@ -196,61 +196,6 @@ def get_clinical_insights(network: BayesianNetwork):
 
     return insights
 
-def get_clinical_implications(network: BayesianNetwork):
-    implications = []
-    sensitivity_fluid = network.compute_sensitivity("CogFluidComp_Unadj")
-    sensitivity_crystal = network.compute_sensitivity("CogCrystalComp_Unadj")
-
-    for feature, value in sensitivity_fluid.items():
-        if abs(value) > 0.1:
-            implications.append(
-                f"Changes in {feature} may significantly impact fluid cognitive abilities (sensitivity: {value:.2f}), suggesting potential for targeted interventions."
-            )
-
-    for feature, value in sensitivity_crystal.items():
-        if abs(value) > 0.1:
-            implications.append(
-                f"Changes in {feature} may significantly impact crystallized cognitive abilities (sensitivity: {value:.2f}), indicating areas for potential cognitive preservation strategies."
-            )
-
-    if abs(sensitivity_fluid["Age"]) > 0.1 or abs(sensitivity_crystal["Age"]) > 0.1:
-        implications.append(
-            "Age has a substantial impact on cognitive abilities, emphasizing the need for age-specific cognitive interventions and preventive strategies."
-        )
-
-    return implications
-
-def get_novel_insights(network: BayesianNetwork):
-    insights = []
-    sensitivity_fluid = network.compute_sensitivity("CogFluidComp_Unadj")
-    sensitivity_crystal = network.compute_sensitivity("CogCrystalComp_Unadj")
-
-    # Compare brain structure influences
-    brain_structures = [f for f in sensitivity_fluid.keys() if f.startswith("FS_")]
-    max_influence = max(brain_structures, key=lambda x: abs(sensitivity_fluid[x]))
-    insights.append(
-        f"Unexpectedly high influence of {max_influence} on fluid cognitive abilities (sensitivity: {sensitivity_fluid[max_influence]:.2f}), suggesting a potential new area for cognitive research."
-    )
-
-    # Compare personality influences
-    if "NEOFAC_O" in sensitivity_fluid and "NEOFAC_C" in sensitivity_fluid:
-        if abs(sensitivity_fluid["NEOFAC_O"]) > abs(sensitivity_fluid["NEOFAC_C"]):
-            insights.append(
-                f"Openness to experience shows a stronger relationship with fluid cognitive abilities (sensitivity: {sensitivity_fluid['NEOFAC_O']:.2f}) than conscientiousness (sensitivity: {sensitivity_fluid['NEOFAC_C']:.2f}), which could inform personality-based cognitive training approaches."
-            )
-
-    # Compare fluid vs crystallized influences
-    for feature in sensitivity_fluid.keys():
-        if feature in sensitivity_crystal:
-            if abs(sensitivity_fluid[feature]) > 2 * abs(
-                sensitivity_crystal[feature]
-            ):
-                insights.append(
-                    f"{feature} has a much stronger influence on fluid cognitive abilities (sensitivity: {sensitivity_fluid[feature]:.2f}) compared to crystallized abilities (sensitivity: {sensitivity_crystal[feature]:.2f}), suggesting different mechanisms for these cognitive domains."
-                )
-
-    return insights
-
 def get_age_specific_insights(data: pd.DataFrame) -> List[str]:
     if data is None:
         return ["No data available for age-specific insights."]
@@ -312,9 +257,6 @@ def get_gender_specific_insights(data: pd.DataFrame):
                 )
 
     return insights
-
-def compute_sensitivity(network: BayesianNetwork) -> str:
-    return network.compute_sensitivity()
 
 def summarize_key_findings(network: BayesianNetwork) -> str:
     return network.summarize_key_findings()

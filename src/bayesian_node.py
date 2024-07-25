@@ -135,15 +135,18 @@ class BayesianNode:
 
     def sample(self, size: int, parent_values: pd.DataFrame = None) -> np.ndarray:
         if parent_values is not None and not parent_values.empty:
-            if isinstance(self.distribution, tuple):
+            if isinstance(self.distribution, dict):
+                # Handle categorical nodes with parents
+                parent_combinations = tuple(parent_values.apply(tuple, axis=1))
+                if parent_combinations in self.distribution:
+                    probs = self.distribution[parent_combinations].rvs(size=size)
+                    return probs
+                else:
+                    raise ValueError(f"Parent combination not found in distribution for node {self.name}")
+            elif isinstance(self.distribution, tuple):
                 if len(self.distribution) == 2:  # Gaussian distribution
                     mean, std = self.distribution
-                    mean = np.atleast_1d(mean)
-                    std = np.atleast_1d(std)
-                    if mean.shape != std.shape:
-                        # Broadcast to match shapes
-                        mean, std = np.broadcast_arrays(mean, std)
-                    return np.random.normal(mean, np.abs(std), size=(size, mean.shape[0])).squeeze()
+                    return np.random.normal(mean, std, size=size)
                 elif len(self.distribution) > 2:  # Linear model
                     intercept, *coefficients = self.distribution
                     parent_values_array = parent_values.values
@@ -211,7 +214,7 @@ class CategoricalNode(BayesianNode):
 
     @classmethod
     def from_dict(cls, data):
-        node = cls(data['name'], data['categories'], data['paramateres'])
+        node = cls(data['name'], data['categories'], data['parameters'])
         node.cpt = np.array(data['cpt']) if data['cpt'] is not None else None
         return node
 

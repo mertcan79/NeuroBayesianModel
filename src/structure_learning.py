@@ -11,43 +11,46 @@ logger = logging.getLogger(__name__)
 def learn_structure(data: pd.DataFrame, method: str = 'k2', max_parents: int = 2, iterations: int = 300, prior_edges: List[tuple] = None) -> Dict[str, BayesianNode]:
     """
     Learn the structure of a Bayesian Network from data.
-    
+
     :param data: DataFrame containing the data
-    :param method: Structure learning method ('k2' or 'hill_climb')
+    :param method: Structure learning method ('hill_climb' or 'k2')
     :param max_parents: Maximum number of parents for any node
-    :param iterations: Maximum number of iterations for the Hill Climbing algorithm
+    :param iterations: Maximum number of iterations for the K2 algorithm
     :param prior_edges: List of tuples representing prior edges to include in the network
     :return: Dictionary of BayesianNode objects representing the learned network structure
     """
     try:
         if method == 'hill_climb':
-            print("hill_climb not implemented")
-
+            # Existing hill_climb code
+            raise ValueError("Hill climb method is not yet implemented in this function.")
+        
         elif method == 'k2':
-            logger.info(f"Starting K2 structure learning with max_parents={max_parents}")
-            estimated_model = k2_algorithm(data, max_parents, prior_edges)
+            # Convert prior_edges to a dictionary with a default score of 1.0
+            prior_edges_dict = {edge: 1.0 for edge in (prior_edges or [])}
+
+            # Initialize the K2 algorithm
+            estimated_model = k2_algorithm(
+                data,
+                max_parents=max_parents,
+                prior_edges=prior_edges_dict
+            )
+
+            # Convert pgmpy model to our custom format
+            nodes = {}
+            for node in estimated_model:
+                nodes[node] = BayesianNode(node)
+
+            for node, node_obj in nodes.items():
+                for parent in node_obj.parents:
+                    nodes[parent].add_child(node_obj)
+                    node_obj.add_parent(nodes[parent])
+
+            logger.info(f"Structure learning complete. Learned {len(nodes)} nodes and {len(estimated_model)} edges.")
+            
+            return nodes
 
         else:
             raise ValueError(f"Unsupported method: {method}. Supported methods are 'hill_climb' and 'k2'.")
-
-        if prior_edges and method == 'hill_climb':
-            for edge in prior_edges:
-                if edge not in estimated_model.edges():
-                    estimated_model.add_edge(*edge)
-
-        # Convert pgmpy model to our custom format
-        nodes = {}
-        for node in estimated_model.nodes():
-            nodes[node] = BayesianNode(node)
-
-        for edge in estimated_model.edges():
-            parent, child = edge
-            nodes[child].add_parent(nodes[parent])
-            nodes[parent].add_child(nodes[child])
-
-        logger.info(f"Structure learning complete. Learned {len(nodes)} nodes and {len(estimated_model.edges())} edges.")
-        
-        return nodes
 
     except Exception as e:
         logger.error(f"Error in structure learning: {str(e)}")

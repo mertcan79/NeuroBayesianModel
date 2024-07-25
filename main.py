@@ -6,6 +6,7 @@ import pandas as pd
 from src.data_processing import prepare_data
 from src.modeling import BayesianModel
 from src.bayesian_network import BayesianNetwork
+from utils import write_results_to_json, write_summary_to_json, network_to_dict, network_from_dict
 
 load_dotenv()
 
@@ -46,7 +47,7 @@ def main():
     )
 
     # Sample data
-    data = data.sample(n=200, random_state=42)
+    data = data.sample(n=100, random_state=42)
 
     # Define prior edges
     prior_edges = [
@@ -67,6 +68,19 @@ def main():
     model = BayesianModel(method='k2', max_parents=2, iterations=100, categorical_columns=categorical_columns)
     model.fit(data, prior_edges=prior_edges)
 
+    required_nodes = ["CogFluidComp_Unadj", "CogCrystalComp_Unadj"]
+    missing_nodes = [node for node in required_nodes if node not in model.network.nodes]
+    if missing_nodes:
+        logger.error(f"Missing nodes in the Bayesian Network: {', '.join(missing_nodes)}")
+        return
+
+    # Ensure all required nodes are present
+    required_nodes = ["CogFluidComp_Unadj", "CogCrystalComp_Unadj"]
+    missing_nodes = [node for node in required_nodes if node not in model.network.nodes]
+    if missing_nodes:
+        logger.error(f"Missing nodes in the Bayesian Network: {', '.join(missing_nodes)}")
+        return
+
     logger.info("Analyzing Bayesian Network")
     results = {}
     results['network_structure'] = model.network.explain_structure_extended()
@@ -75,7 +89,7 @@ def main():
 
     # Write results to JSON
     logger.info("Writing results to JSON")
-    model.write_results_to_json(results)
+    write_results_to_json(model.network, data, results)
 
     logger.info("Network Structure:")
     logger.info(model.network.explain_structure_extended())
@@ -94,7 +108,9 @@ def main():
 
     # Add simulated data summary to results
     results["simulated_data_summary"] = simulated_data.describe().to_dict()
-    model.write_summary_to_json(results)
+
+    logger.info("Writing summary to JSON")
+    write_summary_to_json(model.network, results)
 
     logger.info("Analysis complete.")
 

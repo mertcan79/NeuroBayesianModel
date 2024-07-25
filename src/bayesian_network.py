@@ -66,6 +66,9 @@ class BayesianNetwork:
                     'mean': data[node].mean(),
                     'std': data[node].std()
                 }
+                # Ensure node is initialized with a distribution if required
+                self.nodes[node].distribution = norm(loc=self.parameters[node]['mean'], scale=self.parameters[node]['std'])
+                self.nodes[node].params = {'loc': self.parameters[node]['mean'], 'scale': self.parameters[node]['std']}
             else:
                 X = data[parents]
                 y = data[node]
@@ -75,6 +78,8 @@ class BayesianNetwork:
                     'beta': beta,
                     'std': residuals.std()
                 }
+                # Ensure node has appropriate parameters for regression
+                self.nodes[node].params = {'beta': beta, 'scale': residuals.std()}
 
     def _expectation_step(self, data: pd.DataFrame):
         responsibilities = {}
@@ -191,14 +196,25 @@ class BayesianNetwork:
 
     @lru_cache(maxsize=128)
     def sample_node(self, node_name: str, size: int = 1) -> np.ndarray:
+        if node_name not in self.nodes:
+            raise ValueError(f"Node {node_name} not found in the network.")
+        
         sorted_nodes = self.topological_sort()
         samples = {node: None for node in sorted_nodes}
 
         for node in sorted_nodes:
+            parents = self.get_parents(node)
+            if not parents:
+                samples[node] = np.full(size, self.parameters[node]['mean'])
+            else:
+                parent_values = np.column_stack([samples[parent] for parent in parents])
+                beta = self.parameters[node]['beta']
+                std = self.parameters[node]['std']
+                mean = parent_values @ beta
+                samples[node] = np.random.normal(mean, std, size)
+            
             if node == node_name:
                 break
-            parent_values = {parent: samples[parent] for parent in self.get_parents(node)}
-            samples[node] = self.nodes[node].sample(size, parent_values)
 
         return samples[node_name]
 
@@ -256,18 +272,25 @@ class BayesianNetwork:
         network.parameters = data['parameters']
         return network
 
-    def compute_sensitivity(self, target_node: str, num_samples: int = 1000) -> Dict[str, float]:
-        sensitivity = {}
-        target = self.nodes[target_node]
-        baseline = self.sample_node(target_node, num_samples)
+    def compute_sensitivity(self, target_node_name: str, num_samples: int = 1000) -> Dict[str, float]:
+        if target_node_name not in self.nodes:
+            raise ValueError(f"Node {target_node_name} not found in the network.")
 
+        try:
+            target_samples = self.sample_node(target_node_name, num_samples)
+        except Exception as e:
+            raise ValueError(f"Error sampling target node {target_node_name}: {str(e)}")
+
+        sensitivity = {}
         for node_name in self.nodes:
-            if node_name != target_node:
-                perturbed_data = self.data.copy()
-                perturbed_data[node_name] += np.random.normal(0, 0.1 * perturbed_data[node_name].std(), len(perturbed_data))
-                self.fit(perturbed_data)
-                perturbed_samples = self.sample_node(target_node, num_samples)
-                sensitivity[node_name] = np.mean(np.abs(perturbed_samples - baseline)) / np.std(baseline)
+            if node_name == target_node_name:
+                continue
+
+            try:
+                node_samples = self.sample_node(node_name, num_samples)
+                sensitivity[node_name] = np.corrcoef(target_samples, node_samples)[0, 1]
+            except Exception as e:
+                print(f"Warning: Error computing sensitivity for node {node_name}: {str(e)}")
 
         return sensitivity
 
@@ -284,6 +307,66 @@ class BayesianNetwork:
         sorted_relationships = sorted(relationships, key=lambda x: x['strength'], reverse=True)
         top_10_percent = sorted_relationships[:max(1, len(sorted_relationships) // 10)]
         return [{"parent": r["parent"], "child": r["child"], "strength": round(r["strength"], 2)} for r in top_10_percent]
+
+    def get_novel_insights(self):
+        insights = []
+
+        required_features = ["CogFluidComp_Unadj", "CogCrystalComp_Unadj"]
+        if not all(feature in self.nodes for feature in required_features):
+            return ["Required features for sensitivity analysis are missing."]
+
+        try:
+            sensitivity_fluid = self.compute_sensitivity("CogFluidComp_Unadj")
+            sensitivity_crystal = self.compute_sensitivity("CogCrystalComp_Unadj")
+
+            brain_structures = [f for f in sensitivity_fluid.keys() if f.startswith("FS_")]
+            if brain_structures:
+                max_influence = max(brain_structures, key=lambda x: abs(sensitivity_fluid[x]))
+                insights.append(
+                    f"Unexpectedly high influence of {max_influence} on fluid cognitive abilities (sensitivity: {sensitivity_fluid[max_influence]:.2f}), suggesting a potential new area for cognitive research."
+                )
+
+            if "NEOFAC_O" in sensitivity_fluid and "NEOFAC_C" in sensitivity_fluid:
+                if abs(sensitivity_fluid["NEOFAC_O"]) > abs(sensitivity_fluid["NEOFAC_C"]):
+                    insights.append(
+                        f"Openness to experience shows a stronger relationship with fluid cognitive abilities (sensitivity: {sensitivity_fluid['NEOFAC_O']:.2f}) than conscientiousness (sensitivity: {sensitivity_fluid['NEOFAC_C']:.2f}), which could inform personality-based cognitive training approaches."
+                    )
+
+            for feature in sensitivity_fluid.keys():
+                if feature in sensitivity_crystal:
+                    if abs(sensitivity_fluid[feature]) > 2 * abs(sensitivity_crystal[feature]):
+                        insights.append(
+                            f"{feature} has a much stronger influence on fluid cognitive abilities (sensitivity: {sensitivity_fluid[feature]:.2f}) compared to crystallized abilities (sensitivity: {sensitivity_crystal[feature]:.2f}), suggesting different mechanisms for these cognitive domains."
+                        )
+
+        except Exception as e:
+            insights.append(f"Error computing sensitivities: {str(e)}")
+
+        return insights
+    
+    def get_clinical_implications(self):
+        implications = []
+        sensitivity_fluid = self.compute_sensitivity("CogFluidComp_Unadj")
+        sensitivity_crystal = self.compute_sensitivity("CogCrystalComp_Unadj")
+
+        for feature, value in sensitivity_fluid.items():
+            if abs(value) > 0.1:
+                implications.append(
+                    f"Changes in {feature} may significantly impact fluid cognitive abilities (sensitivity: {value:.2f}), suggesting potential for targeted interventions."
+                )
+
+        for feature, value in sensitivity_crystal.items():
+            if abs(value) > 0.1:
+                implications.append(
+                    f"Changes in {feature} may significantly impact crystallized cognitive abilities (sensitivity: {value:.2f}), indicating areas for potential cognitive preservation strategies."
+                )
+
+        if abs(sensitivity_fluid["Age"]) > 0.1 or abs(sensitivity_crystal["Age"]) > 0.1:
+            implications.append(
+                "Age has a substantial impact on cognitive abilities, emphasizing the need for age-specific cognitive interventions and preventive strategies."
+            )
+
+        return implications
 
     def compute_marginal_likelihoods(self):
         marginal_likelihoods = {}
