@@ -1,30 +1,11 @@
-import os
-import json
 from typing import Dict, Any, List
-from datetime import datetime
 import numpy as np
 import pandas as pd
-from bayesian_network import BayesianNetwork, HierarchicalBayesianNetwork
-from bayesian_node import BayesianNode, CategoricalNode
+from bayesian_network import BayesianNetwork
 
-
-def explain_structure_extended():
-    structure = {"nodes": list(nodes.keys()), "edges": get_edges()}
-    for node_name, node in nodes.items():
-        structure[node_name] = {
-            "parents": [parent.name for parent in node.parents],
-            "children": [child.name for child in node.children],
-            "parameters": node.parameters if hasattr(node, "parameters") else None,
-            "distribution": (
-                str(node.distribution) if hasattr(node, "distribution") else None
-            ),
-        }
-
-    return structure
-
-def get_unexpected_insights():
+def get_unexpected_insights(network: BayesianNetwork):
     insights = []
-    sensitivity = compute_sensitivity("CogFluidComp_Unadj")
+    sensitivity = network.compute_sensitivity(target_node="CogFluidComp_Unadj")
 
     if sensitivity["FS_R_Amygdala_Vol"] > sensitivity["FS_L_Amygdala_Vol"]:
         insights.append(
@@ -49,9 +30,9 @@ def get_unexpected_insights():
 
     return insights
 
-def generate_actionable_insights():
+def generate_actionable_insights(network: BayesianNetwork):
     insights = []
-    sensitivity = compute_sensitivity("CogFluidComp_Unadj")
+    sensitivity = network.compute_sensitivity(target_node="CogFluidComp_Unadj")
 
     if sensitivity["FS_L_Hippo_Vol"] > 0.1:
         insights.append(
@@ -70,7 +51,7 @@ def generate_actionable_insights():
 
     return insights
 
-def analyze_personality_cognition_relationship():
+def analyze_personality_cognition_relationship(data: pd.DataFrame):
     personality_traits = ["NEOFAC_O", "NEOFAC_C"]
     cognitive_measures = ["CogFluidComp_Unadj", "CogCrystalComp_Unadj"]
 
@@ -82,7 +63,7 @@ def analyze_personality_cognition_relationship():
 
     return relationships
 
-def analyze_age_dependent_relationships():
+def analyze_age_dependent_relationships(data: pd.DataFrame):
     young_data = data[data["Age"] < 30]
     old_data = data[data["Age"] >= 30]
 
@@ -101,9 +82,9 @@ def analyze_age_dependent_relationships():
 
     return age_differences
 
-def get_practical_implications():
+def get_practical_implications(network: BayesianNetwork):
     implications = []
-    sensitivity = compute_sensitivity("CogFluidComp_Unadj")
+    sensitivity = network.compute_sensitivity(network, "CogFluidComp_Unadj")
 
     if sensitivity["FS_Total_GM_Vol"] > 0.1:
         implications.append(
@@ -127,7 +108,7 @@ def get_practical_implications():
 
     return implications
 
-def perform_age_stratified_analysis():
+def perform_age_stratified_analysis(data: pd.DataFrame):
     age_groups = {"Young": (0, 30), "Middle": (31, 60), "Older": (61, 100)}
 
     results = {}
@@ -144,9 +125,9 @@ def perform_age_stratified_analysis():
 
     return results
 
-def explain_unexpected_findings():
+def explain_unexpected_findings(network: BayesianNetwork):
     explanations = []
-    sensitivity = compute_sensitivity("CogFluidComp_Unadj")
+    sensitivity = network.compute_sensitivity("CogFluidComp_Unadj")
 
     if sensitivity["FS_BrainStem_Vol"] < -0.1:
         explanations.append(
@@ -163,21 +144,7 @@ def explain_unexpected_findings():
 
     return explanations
 
-def enforce_expected_connections():
-    expected_connections = [
-        ("FS_L_Hippo_Vol", "CogFluidComp_Unadj"),
-        ("FS_R_Hippo_Vol", "CogFluidComp_Unadj"),
-        ("FS_BrainStem_Vol", "ProcSpeed_Unadj"),
-        ("NEOFAC_O", "CogCrystalComp_Unadj"),
-        ("NEOFAC_C", "CogFluidComp_Unadj"),
-    ]
-    for parent, child in expected_connections:
-        if child not in nodes[parent].children:
-            add_edge(parent, child)
-
-    fit(data)  # Refit the model with new connections
-
-def analyze_brain_stem_relationship():
+def analyze_brain_stem_relationship(data: pd.DataFrame):
     brain_stem_correlations = {}
     for measure in [
         "CogFluidComp_Unadj",
@@ -190,7 +157,7 @@ def analyze_brain_stem_relationship():
         brain_stem_correlations[measure] = correlation
     return brain_stem_correlations
 
-def get_personalized_recommendations( individual_data):
+def get_personalized_recommendations(data: pd.DataFrame, individual_data):
     recommendations = []
 
     if individual_data["FS_Total_GM_Vol"] < data["FS_Total_GM_Vol"].mean():
@@ -210,10 +177,10 @@ def get_personalized_recommendations( individual_data):
 
     return recommendations
 
-def get_clinical_insights():
+def get_clinical_insights(network: BayesianNetwork):
     insights = []
-    fluid_sensitivity = compute_sensitivity("CogFluidComp_Unadj")
-    crystal_sensitivity = compute_sensitivity("CogCrystalComp_Unadj")
+    fluid_sensitivity = network.compute_sensitivity("CogFluidComp_Unadj")
+    crystal_sensitivity = network.compute_sensitivity("CogCrystalComp_Unadj")
 
     for feature, value in fluid_sensitivity.items():
         if abs(value) > 0.1:
@@ -229,10 +196,10 @@ def get_clinical_insights():
 
     return insights
 
-def get_clinical_implications():
+def get_clinical_implications(network: BayesianNetwork):
     implications = []
-    sensitivity_fluid = compute_sensitivity("CogFluidComp_Unadj")
-    sensitivity_crystal = compute_sensitivity("CogCrystalComp_Unadj")
+    sensitivity_fluid = network.compute_sensitivity("CogFluidComp_Unadj")
+    sensitivity_crystal = network.compute_sensitivity("CogCrystalComp_Unadj")
 
     for feature, value in sensitivity_fluid.items():
         if abs(value) > 0.1:
@@ -253,10 +220,10 @@ def get_clinical_implications():
 
     return implications
 
-def get_novel_insights():
+def get_novel_insights(network: BayesianNetwork):
     insights = []
-    sensitivity_fluid = compute_sensitivity("CogFluidComp_Unadj")
-    sensitivity_crystal = compute_sensitivity("CogCrystalComp_Unadj")
+    sensitivity_fluid = network.compute_sensitivity("CogFluidComp_Unadj")
+    sensitivity_crystal = network.compute_sensitivity("CogCrystalComp_Unadj")
 
     # Compare brain structure influences
     brain_structures = [f for f in sensitivity_fluid.keys() if f.startswith("FS_")]
@@ -284,7 +251,7 @@ def get_novel_insights():
 
     return insights
 
-def get_age_specific_insights() -> List[str]:
+def get_age_specific_insights(data: pd.DataFrame) -> List[str]:
     if data is None:
         return ["No data available for age-specific insights."]
 
@@ -316,7 +283,7 @@ def get_age_specific_insights() -> List[str]:
 
     return insights
 
-def get_gender_specific_insights():
+def get_gender_specific_insights(data: pd.DataFrame):
     if data is None:
         return ["No data available for gender-specific insights."]
 
@@ -324,18 +291,8 @@ def get_gender_specific_insights():
     male_data = data[data["Gender"] == 0]  # Assuming 0 is male
     female_data = data[data["Gender"] == 1]  # Assuming 1 is female
 
-    male_model = BayesianNetwork(
-        method=method,
-        max_parents=max_parents,
-        iterations=iterations,
-        categorical_columns=categorical_columns,
-    )
-    female_model = BayesianNetwork(
-        method=method,
-        max_parents=max_parents,
-        iterations=iterations,
-        categorical_columns=categorical_columns,
-    )
+    male_model = BayesianNetwork()
+    female_model = BayesianNetwork()
 
     male_model.fit(male_data)
     female_model.fit(female_data)
@@ -356,87 +313,32 @@ def get_gender_specific_insights():
 
     return insights
 
-def summarize_key_findings() -> str:
-    relationships = get_key_relationships()
-    insights = get_novel_insights()
+def compute_sensitivity(network: BayesianNetwork) -> str:
+    return network.compute_sensitivity()
 
-    summary = f"Our Bayesian Network model identified {len(relationships)} strong relationships between brain structures and cognitive functions. "
-    summary += f"Key findings include:\n"
-    summary += f"1. The strongest relationship found was between {relationships[0]['parent']} and {relationships[0]['child']} (strength: {relationships[0]['strength']}).\n"
-    summary += f"2. Age and Gender directly influence both fluid and crystallized cognitive abilities.\n"
-    summary += f"3. Brain structure variables, particularly total gray matter volume and hippocampal volume, are strong predictors of cognitive performance.\n"
-    summary += f"4. {insights[0] if insights else 'No unexpected influences were found.'}\n"
+def summarize_key_findings(network: BayesianNetwork) -> str:
+    return network.summarize_key_findings()
 
-    return summary
+def get_key_relationships(network: BayesianNetwork) -> List[Dict[str, Any]]:
+    return network.get_key_relationships()
 
-def summarize_personality_cognition(relationships: Dict[str, float]) -> Dict[str, float]:
-    if not relationships:
-        return {}
-    return dict(sorted(
-        {k: round(v, 3) for k, v in relationships.items()}.items(),
-        key=lambda x: abs(x[1]),
-        reverse=True
-    )[:3])
+def compute_marginal_likelihoods(network: BayesianNetwork) -> str:
+    return network.compute_marginal_likelihoods()
 
-def summarize_brain_stem_relationships(relationships: Dict[str, float]) -> Dict[str, float]:
-    if not relationships:
-        return {}
-    return {k: round(v, 3) for k, v in relationships.items()}
+def compute_edge_probabilities(network: BayesianNetwork) -> str:
+    return network.compute_edge_probabilities()
 
-def summarize_age_dependent_changes(changes: Dict[str, float]) -> Dict[str, float]:
-    if not changes:
-        return {}
-    significant_changes = {k: round(v, 3) for k, v in changes.items() if abs(v) > 0.1}
-    return dict(sorted(significant_changes.items(), key=lambda x: abs(x[1]), reverse=True)[:5])
+def identify_influential_nodes(network: BayesianNetwork) -> str:
+    return network.identify_influential_nodes()
 
+def compute_mutual_information(network: BayesianNetwork) -> str:
+    return network.compute_mutual_information()
 
-def get_key_relationships() -> List[Dict[str, Any]]:
-    relationships = []
-    for node_name, node in nodes.items():
-        for parent in node.parents:
-            strength = abs(compute_edge_strength(parent.name, node_name))
-            relationships.append(
-                {"parent": parent.name, "child": node_name, "strength": strength}
-            )
-    sorted_relationships = sorted(
-        relationships, key=lambda x: x["strength"], reverse=True
-    )
-    top_10_percent = sorted_relationships[: max(1, len(sorted_relationships) // 10)]
-    return [
-        {
-            "parent": r["parent"],
-            "child": r["child"],
-            "strength": round(r["strength"], 2),
-        }
-        for r in top_10_percent
-    ]
+def compute_edge_probability(network: BayesianNetwork) -> str:
+    return network.compute_edge_probability()
 
-def explain_key_relationships():
-    explanations = []
-    relationships = get_key_relationships()
-    for rel in relationships:
-        if (
-            rel["parent"] == "FS_Total_GM_Vol"
-            and rel["child"] == "CogFluidComp_Unadj"
-        ):
-            explanations.append(
-                f"Total gray matter volume strongly influences fluid cognitive ability (strength: {rel['strength']}). "
-                "This suggests that cognitive training programs should focus on activities that promote gray matter preservation, "
-                "such as complex problem-solving tasks and learning new skills."
-            )
-        elif (
-            rel["parent"] == "FS_L_Hippo_Vol"
-            and rel["child"] == "CogFluidComp_Unadj"
-        ):
-            explanations.append(
-                f"Left hippocampus volume is closely related to fluid cognitive ability (strength: {rel['strength']}). "
-                "This highlights the importance of memory-enhancing exercises in cognitive training, particularly those "
-                "that engage spatial navigation and episodic memory formation."
-            )
-        elif rel["parent"] == "NEOFAC_O" and rel["child"] == "CogCrystalComp_Unadj":
-            explanations.append(
-                f"Openness to experience (NEOFAC_O) influences crystallized cognitive ability (strength: {rel['strength']}). "
-                "This suggests that encouraging curiosity and diverse learning experiences could enhance long-term cognitive performance."
-            )
-        # Add more specific explanations for other important relationships
-    return explanations
+def compute_node_influence(network: BayesianNetwork) -> str:
+    return network.compute_node_influence()
+
+def compute_pairwise_mutual_information(network: BayesianNetwork) -> str:
+    return network.compute_pairwise_mutual_information()

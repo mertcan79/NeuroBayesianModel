@@ -4,49 +4,33 @@ from typing import Dict, List, Tuple
 from pgmpy.estimators import HillClimbSearch, BicScore, K2Score, BDeuScore
 import logging
 
-from .bayesian_node import BayesianNode, CategoricalNode
+from bayesian_node import BayesianNode, CategoricalNode
 
 logger = logging.getLogger(__name__)
-
 
 def learn_structure(data: pd.DataFrame, method: str = 'k2', max_parents: int = 2, iterations: int = 300, prior_edges: List[tuple] = None) -> Dict[str, BayesianNode]:
     """
     Learn the structure of a Bayesian Network from data.
     
     :param data: DataFrame containing the data
-    :param method: Structure learning method (currently only 'hill_climb' is supported)
+    :param method: Structure learning method ('k2' or 'hill_climb')
     :param max_parents: Maximum number of parents for any node
     :param iterations: Maximum number of iterations for the Hill Climbing algorithm
     :param prior_edges: List of tuples representing prior edges to include in the network
     :return: Dictionary of BayesianNode objects representing the learned network structure
     """
     try:
-        if method != 'hill_climb':
-            raise ValueError(f"Unsupported method: {method}. Only 'hill_climb' is currently supported.")
+        if method == 'hill_climb':
+            print("hill_climb not implemented")
 
-        # Initialize the Hill Climbing search
-        hc = HillClimbSearch(data)
-        bdeu_score = BDeuScore(data, equivalent_sample_size=10)
+        elif method == 'k2':
+            logger.info(f"Starting K2 structure learning with max_parents={max_parents}")
+            estimated_model = k2_algorithm(data, max_parents, prior_edges)
 
-        # Create a blacklist of edges (if needed)
-        blacklist = []
+        else:
+            raise ValueError(f"Unsupported method: {method}. Supported methods are 'hill_climb' and 'k2'.")
 
-        # Create a whitelist of edges from prior_edges
-        whitelist = prior_edges if prior_edges else []
-
-        logger.info(f"Starting structure learning with max_parents={max_parents}, iterations={iterations}")
-        
-        # Estimate the model structure
-        estimated_model = hc.estimate(
-            scoring_method=bdeu_score,
-            max_indegree=max_parents,
-            black_list=blacklist,
-            white_list=whitelist,
-            epsilon=1e-4,
-            max_iter=iterations
-        )
-
-        if prior_edges:
+        if prior_edges and method == 'hill_climb':
             for edge in prior_edges:
                 if edge not in estimated_model.edges():
                     estimated_model.add_edge(*edge)
@@ -113,7 +97,6 @@ def k2_algorithm(
             nodes[parent].children.append(nodes[node])
 
     return nodes
-
 
 def score_node(
     data: pd.DataFrame,

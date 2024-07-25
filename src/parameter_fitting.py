@@ -5,7 +5,7 @@ from scipy import stats
 import logging
 from scipy.stats import norm, gamma, dirichlet
 
-from .bayesian_node import BayesianNode, CategoricalNode
+from bayesian_node import BayesianNode, CategoricalNode
 
 logger = logging.getLogger(__name__)
 

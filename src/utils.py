@@ -5,20 +5,11 @@ import numpy as np
 import pandas as pd
 from bayesian_network import HierarchicalBayesianNetwork
 from bayesian_node import BayesianNode, CategoricalNode
-from .bayesian_network import BayesianNetwork
+from bayesian_network import BayesianNetwork
 from typing import Dict, Any, List, Tuple
-from .insights import (
-    explain_structure_extended, summarize_key_findings,
-    summarize_personality_cognition, summarize_age_dependent_changes, get_key_relationships,
-    perform_age_stratified_analysis, get_practical_implications, get_age_specific_insights,
-    get_gender_specific_insights, explain_key_relationships, get_unexpected_insights, get_personalized_recommendations,
-    analyze_brain_stem_relationship, generate_actionable_insights, analyze_personality_cognition_relationship, analyze_age_dependent_relationships,
-    explain_unexpected_findings, get_novel_insights, get_clinical_implications, 
-)
+from insights import *
 
-from .bayesian_network import get_confidence_intervals, get_performance_metrics, get_intervention_simulations, get_confidence_intervals
-
-def write_results_to_json(results: Dict[str, Any], filename: str = None):
+def write_results_to_json(network, data: pd.DataFrame, results: Dict[str, Any], filename: str = None):
     if filename is None:
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         filename = f"results_{timestamp}.json"
@@ -49,25 +40,25 @@ def write_results_to_json(results: Dict[str, Any], filename: str = None):
     #    results["hierarchical_structure"] = explain_hierarchical_structure()
     
     # Add key relationships and insights
-    results["key_relationships"] = get_key_relationships()
-    results["novel_insights"] = get_novel_insights()
-    results["clinical_implications"] = get_clinical_implications()
+    results["key_relationships"] = network.get_key_relationships()
+    results["novel_insights"] = network.get_novel_insights()
+    results["clinical_implications"] = network.get_clinical_implications()
     
     # Add confidence intervals for key relationships
-    results["confidence_intervals"] = get_confidence_intervals()
+    results["confidence_intervals"] = network.get_confidence_intervals()
     
     # Add intervention simulation results
-    results["intervention_simulations"] = get_intervention_simulations()
+    results["intervention_simulations"] = network.get_intervention_simulations()
     
     # Add age and gender-specific insights
-    results["age_specific_insights"] = get_age_specific_insights()
-    results["gender_specific_insights"] = get_gender_specific_insights()
+    results["age_specific_insights"] = network.get_age_specific_insights()
+    results["gender_specific_insights"] = network.get_gender_specific_insights()
     
-    results["key_relationship_explanations"] = explain_key_relationships()
-    results["performance_metrics"] = get_performance_metrics()
-    results["unexpected_insights"] = get_unexpected_insights()
+    results["key_relationship_explanations"] = network.explain_key_relationships()
+    results["performance_metrics"] = network.get_performance_metrics()
+    results["unexpected_insights"] = network.get_unexpected_insights()
 
-    results["network_structure"] = explain_structure_extended()
+    results["network_structure"] = network.explain_structure_extended()
 
     # Example individual for personalized recommendations
     example_individual = {
@@ -75,22 +66,22 @@ def write_results_to_json(results: Dict[str, Any], filename: str = None):
         'FS_Tot_WM_Vol': data['FS_Tot_WM_Vol'].mean(),
         'NEOFAC_O': data['NEOFAC_O'].mean()
     }
-    results["personalized_recommendations_example"] = get_personalized_recommendations(example_individual)
+    results["personalized_recommendations_example"] = network.get_personalized_recommendations(example_individual)
     
-    results["confidence_intervals"] = get_confidence_intervals()
+    results["confidence_intervals"] = network.get_confidence_intervals()
     
-    results["brain_stem_relationships"] = analyze_brain_stem_relationship()
-    results["actionable_insights"] = generate_actionable_insights()
-    results["personality_cognition_relationships"] = analyze_personality_cognition_relationship()
-    results["age_dependent_relationships"] = analyze_age_dependent_relationships()
+    results["brain_stem_relationships"] = network.analyze_brain_stem_relationship()
+    results["actionable_insights"] = network.generate_actionable_insights()
+    results["personality_cognition_relationships"] = network.analyze_personality_cognition_relationship()
+    results["age_dependent_relationships"] = network.analyze_age_dependent_relationships()
     
     # Enforce expected connections and refit if necessary
-    enforce_expected_connections()
-    results["updated_network_structure"] = explain_structure_extended()
+    network.enforce_expected_connections()
+    results["updated_network_structure"] = network.explain_structure_extended()
 
-    results["practical_implications"] = get_practical_implications()
-    results["age_stratified_analysis"] = perform_age_stratified_analysis()
-    results["unexpected_findings_explanations"] = explain_unexpected_findings()
+    results["practical_implications"] = network.get_practical_implications()
+    results["age_stratified_analysis"] = network.perform_age_stratified_analysis()
+    results["unexpected_findings_explanations"] = network.explain_unexpected_findings()
     
 
     # Potential applications for cognitive training programs
@@ -129,8 +120,8 @@ def write_summary_to_json(network, results: Dict[str, Any], filename: str = None
         "continuous_variables": [node for node in network.nodes if node not in network.categorical_columns],
         "key_findings": network.summarize_key_findings(),
         "future_research_directions": network.suggest_future_research(),
-        "key_personality_cognition_findings": summarize_personality_cognition(results.get("personality_cognition_relationships")),
-        "significant_age_dependent_changes": summarize_age_dependent_changes(results.get("age_dependent_relationships")),
+        "key_personality_cognition_findings": network.summarize_personality_cognition(results.get("personality_cognition_relationships")),
+        "significant_age_dependent_changes": network.summarize_age_dependent_changes(results.get("age_dependent_relationships")),
     }
     
     try:

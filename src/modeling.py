@@ -3,17 +3,23 @@ import numpy as np
 import logging
 from typing import List, Callable, Tuple, Dict, Any
 from scipy.special import logsumexp
-from bayesian_node import BayesianNode, CategoricalNode
-from .bayesian_network import BayesianNetwork
-from .structure_learning import learn_structure
+import networkx as nx
 
+from bayesian_node import BayesianNode, CategoricalNode
+from bayesian_network import BayesianNetwork
+from structure_learning import learn_structure
+
+logging.basicConfig(level=logging.ERROR)
 logger = logging.getLogger(__name__)
 
 class BayesianModel:
-    def __init__(self, method='hill_climb', max_parents=2, iterations=300, categorical_columns=None):
-        self.network = BayesianNetwork()
+    def __init__(self, method='k2', max_parents=2, iterations=300, categorical_columns=None):
+        self.network = BayesianNetwork(method=method, max_parents=max_parents, iterations=iterations, categorical_columns=categorical_columns)
+        self.data = None
+        self.parameteres = None
 
     def fit(self, data: pd.DataFrame, prior_edges: List[tuple] = None, progress_callback: Callable[[float], None] = None):
+        self.data = None
         """Fit the Bayesian network to the data."""
         try:
             preprocessed_data = self.preprocess_data(data)
@@ -21,12 +27,12 @@ class BayesianModel:
             # Learn structure
             if progress_callback:
                 progress_callback(0.3)
-            self.network.learn_structure(preprocessed_data, prior_edges)
+            learn_structure(preprocessed_data, prior_edges)
             
             # Fit parameters
             if progress_callback:
                 progress_callback(0.6)
-            self.network.fit_parameters(preprocessed_data)
+            self.network.fit(preprocessed_data)
             
             if progress_callback:
                 progress_callback(1.0)
@@ -40,7 +46,7 @@ class BayesianModel:
 
     def evaluate(self, data: pd.DataFrame, num_folds: int = 5) -> float:
         """Evaluate the Bayesian network using cross-validation."""
-        return self.network.cross_validate(data, num_folds)
+        return self.cross_validate(data, num_folds)
 
     def compute_sensitivity(self, target_node: str, num_samples: int = 1000) -> Dict[str, float]:
         """Compute sensitivity of the target node to changes in other nodes."""
@@ -50,20 +56,29 @@ class BayesianModel:
         analysis = {}
         
         # Compute marginal likelihoods
-        analysis['marginal_likelihoods'] = self.compute_marginal_likelihoods()
+        analysis['marginal_likelihoods'] = self.network.compute_marginal_likelihoods()
         
         # Compute posterior probabilities of edges
-        analysis['edge_probabilities'] = self.compute_edge_probabilities()
+        analysis['edge_probabilities'] = self.network.compute_edge_probabilities()
         
         # Identify most influential nodes
-        analysis['influential_nodes'] = self.identify_influential_nodes()
+        analysis['influential_nodes'] = self.network.identify_influential_nodes()
+        
+        return analysis
+
+    def log_likelihood(self, data: pd.DataFrame) -> float:
+        return self.network._compute_log_likelihood(data)
+
+    @property
+    def nodes(self):
+        return self.network.nodes
 
     def save(self, filename: str):
         """Save the Bayesian network to a file."""
         self.network.save(filename)
 
     def write_results_to_json(self, results):
-        self.network.write_results_to_json(results)
+        self.write_results_to_json(results)
 
     def explain_structure_extended(self):
         return self.network.explain_structure_extended()
@@ -72,13 +87,9 @@ class BayesianModel:
     def load(cls, filename: str):
         """Load the Bayesian network from a file."""
         network = BayesianNetwork.load(filename)
-        model = cls(method=network.method, max_parents=network.max_parents, iterations=network.iterations, categorical_columns=network.categorical_columns)
+        model = cls()
         model.network = network
         return model
-
-    def compute_sensitivity(self, target_node: str, num_samples: int = 1000) -> Dict[str, float]:
-        """Compute sensitivity of the target node to changes in other nodes."""
-        return self.network.compute_sensitivity(target_node, num_samples=num_samples)
 
 
     def fit_transform(self, data: pd.DataFrame) -> pd.DataFrame:
@@ -123,6 +134,9 @@ class BayesianModel:
 
         print("Parameter fitting complete.")
 
+    def topological_sort(self) -> List[str]:
+        graph = nx.DiGraph(self.network.edges)
+        return list(nx.topological_sort(graph))
 
     def cross_validate(self, data: pd.DataFrame, num_folds: int = 5) -> float:
         fold_size = len(data) // num_folds
@@ -166,6 +180,9 @@ class BayesianModel:
         return results
 
     def simulate_intervention(self, intervention, size=1000):
+        if self.data is None:
+            raise ValueError("No data available. Please fit the model first.")
+        
         simulated_data = self.data.sample(n=size, replace=True).copy()
         for var, func in intervention.items():
             simulated_data[var] = simulated_data[var].apply(func)
@@ -174,28 +191,19 @@ class BayesianModel:
         sorted_nodes = self.topological_sort()
         for node in sorted_nodes:
             if node not in intervention:
-                parents = self.nodes[node].parents
+                parents = self.network.get_parents(node)
                 if parents:
-                    parent_values = simulated_data[[p.name for p in parents]]
-                    try:
-                        sampled_values = self.nodes[node].sample(size, parent_values)
-                        if len(sampled_values) != size:
-                            logger.warning(f"Sampled values for node {node} have unexpected size. Expected {size}, got {len(sampled_values)}. Padding with NaN.")
-                            sampled_values = np.pad(sampled_values, (0, size - len(sampled_values)), mode='constant', constant_values=np.nan)
-                        simulated_data[node] = sampled_values
-                    except Exception as e:
-                        logger.error(f"Error simulating node {node}: {str(e)}")
-                        simulated_data[node] = np.full(size, np.nan)
-                else:
-                    try:
-                        sampled_values = self.nodes[node].sample(size)
-                        if len(sampled_values) != size:
-                            logger.warning(f"Sampled values for node {node} have unexpected size. Expected {size}, got {len(sampled_values)}. Padding with NaN.")
-                            sampled_values = np.pad(sampled_values, (0, size - len(sampled_values)), mode='constant', constant_values=np.nan)
-                        simulated_data[node] = sampled_values
-                    except Exception as e:
-                        logger.error(f"Error simulating node {node}: {str(e)}")
-                        simulated_data[node] = np.full(size, np.nan)
+                    parent_values = simulated_data[parents]
+                    simulated_data[node] = self.predict_node(node, parent_values)
 
         return simulated_data
+
+    def predict_node(self, node, parent_values):
+        if node not in self.network.nodes:
+            raise ValueError(f"Node {node} not in network")
+        
+        if not self.network.get_parents(node):
+            return np.full(len(parent_values), self.network.parameters[node]['mean'])
+        else:
+            return parent_values @ self.network.parameters[node]['beta']
     

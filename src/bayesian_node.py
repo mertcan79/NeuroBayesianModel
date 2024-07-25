@@ -31,6 +31,13 @@ class BayesianNode:
             'distribution': str(self.distribution) if self.distribution else None
         }
 
+    @classmethod
+    def from_dict(cls, data):
+        node = cls(data['name'])
+        node.parameters = data['parameters']
+        node.distribution = eval(data['distribution']) if data['distribution'] else None
+        return node
+
     def add_parent(self, parent: 'BayesianNode'):
         if parent not in self.parents:
             self.parents.append(parent)
@@ -186,6 +193,7 @@ class BayesianNode:
 class CategoricalNode(BayesianNode):
     def __init__(self, name, categories, parameters):
         super().__init__(name)
+        self.name = name
         self.categories = list(range(len(categories)))  # Use integer codes
         self.original_categories = categories
         self.distribution = stats.multinomial
@@ -201,6 +209,11 @@ class CategoricalNode(BayesianNode):
         })
         return base_dict
 
+    @classmethod
+    def from_dict(cls, data):
+        node = cls(data['name'], data['categories'], data['paramateres'])
+        node.cpt = np.array(data['cpt']) if data['cpt'] is not None else None
+        return node
 
     def fit(self, data, parent_data=None):
         if parent_data is None or len(parent_data) == 0:
