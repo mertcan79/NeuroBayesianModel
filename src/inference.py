@@ -3,45 +3,41 @@ import pandas as pd
 from typing import Dict, Any, List
 from bayesian_node import BayesianNode, CategoricalNode, Node
 import logging
+from scipy.stats import rv_continuous, rv_discrete
 
-# Set up logging configuration
+
 logger = logging.getLogger()
-logger.setLevel(logging.WARNING)  # Set to WARNING to suppress DEBUG and INFO logs
+logger.setLevel(logging.WARNING) 
 
 class Inference:
-    def __init__(self, nodes: Dict[str, BayesianNode]):
+    def __init__(self, nodes):
         self.nodes = nodes
 
-    def get_parents(self, node_name: str) -> List[str]:
-        return self.nodes[node_name].parents if self.nodes[node_name].parents else []
-    
-    def sample_node(self, node_name: str, size: int = 1) -> np.ndarray:
+    def sample_node(self, node_name, size):
+        # Ensure the node exists
         if node_name not in self.nodes:
-            raise ValueError(f"Node {node_name} not found in the inference object.")
+            raise ValueError(f"Node {node_name} not found in the network.")
         
         node = self.nodes[node_name]
-        if not node.parents:
-            if isinstance(node, CategoricalNode):
-                return node.sample(size)
-            elif node.distribution is not None:
-                params = node.params if node.params is not None else {}
-                samples = node.distribution.rvs(size=size, **params)
-                return node.apply_inverse_transform(samples)
-            else:
-                raise ValueError(f"No distribution set for node {node_name}")
-        else:
-            parent_values = np.column_stack(
-                [self.sample_node(p.name, size) for p in node.parents]
-            )
-            if isinstance(node, CategoricalNode):
-                return node.sample(size)
-            else:
-                beta = node.params.get("beta", np.zeros(len(node.parents)))
-                loc = np.dot(parent_values, beta)
-                scale = node.params.get("scale", 1.0)
-                noise = np.random.normal(0, scale, size)
-                samples = loc + noise
-                return node.apply_inverse_transform(samples)
+        distribution = node.distribution
+        
+        if hasattr(distribution, 'rvs'):
+            # For frozen distributions, use the rvs method to sample
+            return distribution.rvs(size=size)
+        
+        # Handle other distribution types as needed
+        if isinstance(distribution, tuple) and len(distribution) == 2:
+            # Example for Normal distribution
+            mean, std_dev = distribution
+            return np.random.normal(loc=mean, scale=std_dev, size=size)
+        
+        # Add handling for other distribution types as needed
+        raise ValueError(f"Unsupported distribution type for node {node_name}: {type(distribution).__name__}")
+
+
+        
+    def __repr__(self):
+        return f"Inference(nodes={list(self.nodes.keys())})"
             
     def log_likelihood(self, nodes, data):
         total_ll = 0

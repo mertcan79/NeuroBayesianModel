@@ -26,52 +26,101 @@ class BayesianNetwork:
         self.iterations = iterations
         self.categorical_columns = categorical_columns or []
         self.nodes = {}
-        self.edges = []
+        self.edges = {}
         self.data = None
         self.parameters = {}
         self.inference = None
 
-    def fit(self, data: pd.DataFrame, prior: Dict[str, Any] = None, max_iter: int = 100, tol: float = 1e-6):
+    def fit(self, data: pd.DataFrame, prior=None, max_iter=100, tol=1e-3):
+        # Assume _create_nodes_from_data and _learn_structure are correctly implemented
         self.data = data
+        self.nodes = self._create_nodes_from_data(data)
         self._learn_structure(data)
         self._initialize_parameters(data, prior)
-
-        # Initialize nodes
-        self.nodes = self._create_nodes_from_data(data)
-        
-        # Create and initialize inference object
         self.inference = Inference(nodes=self.nodes)
-        
-        log_likelihood_old = -np.inf
-        for iteration in range(max_iter):
-            responsibilities = self._expectation_step(data)
-            self._maximization_step(data, responsibilities)
-            log_likelihood_new = self._compute_log_likelihood(data)
-            
-            if abs(log_likelihood_new - log_likelihood_old) < tol:
-                logger.info(f"Converged after {iteration + 1} iterations")
-                break
-            
-            log_likelihood_old = log_likelihood_new
-        
-        if iteration == max_iter - 1:
-            logger.warning(f"Did not converge after {max_iter} iterations")
+
+    def get_parents_for_node(self, node_name: str) -> List[str]:
+        """Return a list of parent nodes for the given node."""
+        parents = []
+        for parent, children in self.edges.items():
+            if node_name in children:
+                parents.append(parent)
+        return parents
+
+    def _create_nodes_from_data(self, data: pd.DataFrame) -> Dict[str, BayesianNode]:
+        # Create nodes from data
+        return {column: BayesianNode(name=column) for column in data.columns}
 
     def _learn_structure(self, data: pd.DataFrame):
-        self.nodes = learn_structure(
-            data,
-            method=self.method,
-            max_parents=self.max_parents,
-            iterations=self.iterations
-        )
-        self.edges = [(parent.name, node.name) for node in self.nodes.values() for parent in node.parents]
+        # Learn the structure of the Bayesian network
+        nodes = self.nodes
+        for node_name, node in nodes.items():
+            parents = self.get_parents_for_node(node_name)
+            for parent_name in parents:
+                parent_node = nodes.get(parent_name)
+                if parent_node:
+                    parent_node.children.append(node)
+        self.nodes = nodes
 
-    def _create_nodes_from_data(self, data):
-        # Example method to create nodes from data
-        nodes = {}
-        for column in data.columns:
-            nodes[column] = BayesianNode(name=column)
-        return nodes
+    def _initialize_parameters(self, data: pd.DataFrame, prior=None):
+        """
+        Initialize the parameters for all nodes in the Bayesian network.
+        
+        Args:
+            data (pd.DataFrame): The data used to initialize parameters.
+            prior (Dict[str, Any], optional): Prior information for the parameters.
+        """
+        # Define prior defaults
+        default_prior = {
+            'mean': 0.0,
+            'std': 1.0,
+            'alpha': 1.0,
+            'beta': 1.0
+        }
+
+        # Iterate over all nodes
+        for node_name, node in self.nodes.items():
+            # Extract node data
+            node_data = data[node_name]
+            parent_names = [parent.name for parent in node.parents]
+            parent_data = data[parent_names] if parent_names else None
+            
+            # Initialize parameters based on node type
+            if isinstance(node, CategoricalNode):
+                # For categorical nodes, use a Multinomial distribution
+                counts = node_data.value_counts()
+                probs = counts / counts.sum()
+                node.distribution = probs.to_dict()  # Store the probabilities
+            else:
+                # For continuous nodes, initialize using regression or basic statistics
+                if parent_data is not None:
+                    # Simple Linear Regression if there are parent variables
+                    from sklearn.linear_model import LinearRegression
+                    model = LinearRegression()
+                    model.fit(parent_data, node_data)
+                    node.distribution = (model.intercept_, model.coef_)
+                else:
+                    # Assume normal distribution if no parents
+                    mean = node_data.mean()
+                    std = node_data.std() if node_data.std() != 0 else 1.0  # Avoid zero std
+                    node.distribution = (mean, std)
+            
+            # Apply prior if provided
+            if prior and node_name in prior:
+                prior_info = prior[node_name]
+                if isinstance(node, CategoricalNode):
+                    # Prior for categorical node could be a Dirichlet prior for example
+                    pass
+                else:
+                    # For continuous nodes, you might adjust mean and std based on prior
+                    mean_prior = prior_info.get('mean', default_prior['mean'])
+                    std_prior = prior_info.get('std', default_prior['std'])
+                    node.distribution = (mean_prior, std_prior)
+
+            # Mark the node as fitted
+            node.fitted = True
+
+        print("Parameter initialization complete.")
 
     def _initialize_parameters(self, data: pd.DataFrame, prior: Dict[str, Any] = None):
         if prior is None:

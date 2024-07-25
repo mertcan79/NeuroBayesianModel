@@ -5,16 +5,20 @@ import pandas as pd
 from scipy.stats import norm, gamma, dirichlet
 
 class BayesianNode:
-    def __init__(self, name: str):
+    def __init__(self, name: str, distribution=None, parents=None):
         self.name = name
-        self.parents: List['BayesianNode'] = []
-        self.children: List['BayesianNode'] = []
+        self.parents: parents if parents else []
         self.params = None
-        self.distribution = None
+        self.distribution = distribution
         self.is_categorical = False
         self.categories = None
         self.transform = None  
         self.inverse_transform = None  
+        self.fitted = False
+        self.children = []
+
+    def __repr__(self):
+        return f"BayesianNode(name={self.name}, distribution={self.distribution}, parents={self.parents})"
 
     def __eq__(self, other):
         if isinstance(other, BayesianNode):
@@ -51,8 +55,11 @@ class BayesianNode:
     def set_params(self, params):
         self.params = params
 
-    def set_distribution(self, distribution):
-        self.distribution = distribution
+    def set_distribution(self, dist):
+        self.distribution = dist
+
+    def get_distribution(self):
+        return self.distribution
 
     def set_categorical(self, is_categorical: bool, categories: List = None):
         self.is_categorical = is_categorical
@@ -181,12 +188,9 @@ class BayesianNode:
                 mean = np.dot(mean, parent_array)
             return stats.norm.logpdf(value, mean, std)
 
-    def __repr__(self):
-        return f"BayesianNode(name={self.name}, parents={[p.name for p in self.parents]}, children={[c.name for c in self.children]})"
-
 class CategoricalNode(BayesianNode):
-    def __init__(self, name, categories, params):
-        super().__init__(name)
+    def __init__(self, name: str, parents=None):
+        super().__init__(name, parents)
         self.name = name
         self.categories = list(range(len(categories)))  # Use integer codes
         self.original_categories = categories
@@ -208,6 +212,20 @@ class CategoricalNode(BayesianNode):
         node = cls(data['name'], data['categories'], data['params'])
         node.cpt = np.array(data['cpt']) if data['cpt'] is not None else None
         return node
+
+    def set_distribution(self, dist):
+        self.distribution = dist
+
+    def get_distribution(self):
+        return self.distribution
+
+    def add_parent(self, parent: 'CategoricalNode'):
+        if parent not in self.parents:
+            self.parents.append(parent)
+
+    def add_child(self, child: 'CategoricalNode'):
+        if child not in self.children:
+            self.children.append(child)
 
     def sample(self, size: int, parent_samples: Optional[np.ndarray] = None) -> np.ndarray:
         if self.cpt is None:

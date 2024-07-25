@@ -13,41 +13,18 @@ logging.basicConfig(level=logging.ERROR)
 logger = logging.getLogger(__name__)
 
 class BayesianModel:
-    def __init__(self, method='k2', max_parents=2, iterations=300, categorical_columns=None):
-        self.network = BayesianNetwork(method=method, max_parents=max_parents, iterations=iterations, categorical_columns=categorical_columns)
-        self.data = None
-        self.parameters = None
+    def __init__(self, method='k2', max_parents=2, iterations=100, categorical_columns=None):
         self.method = method
         self.max_parents = max_parents
         self.iterations = iterations
+        self.categorical_columns = categorical_columns or []
+        self.network = BayesianNetwork(method=method, max_parents=max_parents, iterations=iterations, categorical_columns=categorical_columns)
+        self.data = None
 
-    def fit(self, data: pd.DataFrame, prior_edges: List[tuple] = None, progress_callback: Callable[[float], None] = None):
+    def fit(self, data: pd.DataFrame, prior_edges: Dict[str, Any] = None, progress_callback=None):
         self.data = data
-        """Fit the Bayesian network to the data."""
-        try:
-            preprocessed_data = self.preprocess_data(data)
-            
-            # Learn structure
-            if progress_callback:
-                progress_callback(0.3)
-            self.network.structure = learn_structure(
-                preprocessed_data,
-                method=self.method,
-                max_parents=self.max_parents,
-                iterations=self.iterations,
-                prior_edges=prior_edges
-            )
-            
-            # Fit parameters
-            if progress_callback:
-                progress_callback(0.6)
-            self.network.fit(preprocessed_data)
-            
-            if progress_callback:
-                progress_callback(1.0)
-        except Exception as e:
-            logger.error(f"Error during model fitting: {e}")
-            raise
+        self.network.fit(data, prior=prior_edges)
+        self.inference = self.network.inference
 
     def preprocess_data(self, data: pd.DataFrame) -> pd.DataFrame:
         """Preprocess data for the Bayesian network."""
@@ -121,27 +98,23 @@ class BayesianModel:
             parent_names = [parent.name for parent in node.parents]
             node_data = data[node_name]
             parent_data = data[parent_names] if parent_names else None
-            
+
             try:
                 if isinstance(node, CategoricalNode):
                     node.fit(node_data, parent_data)
                 else:
-                    # For continuous nodes, we'll use a simple linear regression
                     if parent_data is not None:
                         from sklearn.linear_model import LinearRegression
                         model = LinearRegression().fit(parent_data, node_data)
-                        node.distribution = (model.intercept_, model.coef_)
+                        node.set_distribution((model.intercept_, model.coef_))
                     else:
-                        node.distribution = (node_data.mean(), node_data.std())
+                        node.set_distribution((node_data.mean(), node_data.std()))
                 
-                # Mark the node as fitted
                 node.fitted = True
                 
             except Exception as e:
                 print(f"Error fitting node {node_name}: {str(e)}")
                 raise
-
-        print("Parameter fitting complete.")
 
     def topological_sort(self) -> List[str]:
         graph = nx.DiGraph(self.network.edges)
