@@ -29,13 +29,18 @@ class BayesianNetwork:
         self.edges = []
         self.data = None
         self.parameters = {}
-        self.inference = Inference()
+        self.inference = None
 
     def fit(self, data: pd.DataFrame, prior: Dict[str, Any] = None, max_iter: int = 100, tol: float = 1e-6):
         self.data = data
         self._learn_structure(data)
         self._initialize_parameters(data, prior)
-        self.inference.set_nodes(self.nodes)
+
+        # Initialize nodes
+        self.nodes = self._create_nodes_from_data(data)
+        
+        # Create and initialize inference object
+        self.inference = Inference(nodes=self.nodes)
         
         log_likelihood_old = -np.inf
         for iteration in range(max_iter):
@@ -60,6 +65,13 @@ class BayesianNetwork:
             iterations=self.iterations
         )
         self.edges = [(parent.name, node.name) for node in self.nodes.values() for parent in node.parents]
+
+    def _create_nodes_from_data(self, data):
+        # Example method to create nodes from data
+        nodes = {}
+        for column in data.columns:
+            nodes[column] = BayesianNode(name=column)
+        return nodes
 
     def _initialize_parameters(self, data: pd.DataFrame, prior: Dict[str, Any] = None):
         if prior is None:

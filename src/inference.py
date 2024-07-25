@@ -11,9 +11,6 @@ logger.setLevel(logging.WARNING)  # Set to WARNING to suppress DEBUG and INFO lo
 class Inference:
     def __init__(self, nodes: Dict[str, BayesianNode]):
         self.nodes = nodes
-    
-    def set_nodes(self, nodes):
-        self.nodes = nodes
 
     def get_parents(self, node_name: str) -> List[str]:
         return self.nodes[node_name].parents if self.nodes[node_name].parents else []
