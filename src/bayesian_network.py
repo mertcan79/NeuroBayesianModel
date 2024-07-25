@@ -50,17 +50,31 @@ class BayesianNetwork:
     def _create_nodes_from_data(self, data: pd.DataFrame) -> Dict[str, BayesianNode]:
         # Create nodes from data
         return {column: BayesianNode(name=column) for column in data.columns}
-
+    
     def _learn_structure(self, data: pd.DataFrame):
         # Learn the structure of the Bayesian network
-        nodes = self.nodes
-        for node_name, node in nodes.items():
-            parents = self.get_parents_for_node(node_name)
-            for parent_name in parents:
-                parent_node = nodes.get(parent_name)
-                if parent_node:
-                    parent_node.children.append(node)
-        self.nodes = nodes
+        self.edges = learn_structure(data, method=self.method, max_parents=self.max_parents, iterations=self.iterations)
+        
+        print("Edges learned:", self.edges)  # Debug print
+        
+        for parent, child in self.edges:
+            if parent not in self.nodes or child not in self.nodes:
+                print(f"Warning: Edge {parent} -> {child} references non-existent node")
+                continue
+            
+            parent_node = self.nodes[parent]
+            child_node = self.nodes[child]
+            
+            if child_node not in parent_node.children:
+                parent_node.children.append(child_node)
+            if parent_node not in child_node.parents:
+                child_node.parents.append(parent_node)
+    
+    # Debug print
+    for node_name, node in self.nodes.items():
+        print(f"Node: {node_name}")
+        print(f"  Parents: {[p.name for p in node.parents]}")
+        print(f"  Children: {[c.name for c in node.children]}")
 
     def _initialize_parameters(self, data: pd.DataFrame, prior=None):
         """

@@ -3,11 +3,11 @@ from typing import List, Tuple, Union, Optional
 from scipy import stats
 import pandas as pd
 from scipy.stats import norm, gamma, dirichlet
+from scipy import stats
 
 class BayesianNode:
     def __init__(self, name: str, distribution=None, parents=None):
         self.name = name
-        self.parents: parents if parents else []
         self.params = None
         self.distribution = distribution
         self.is_categorical = False
@@ -15,6 +15,7 @@ class BayesianNode:
         self.transform = None  
         self.inverse_transform = None  
         self.fitted = False
+        self.parents = parents if parents else []
         self.children = []
 
     def __repr__(self):
@@ -59,7 +60,13 @@ class BayesianNode:
         self.distribution = dist
 
     def get_distribution(self):
-        return self.distribution
+        if isinstance(self.distribution, (stats.rv_continuous, stats.rv_discrete)):
+            return self.distribution
+        elif isinstance(self.distribution, tuple) and len(self.distribution) == 2:
+            # Assume it's (mean, std) for a normal distribution
+            return stats.norm(*self.distribution)
+        else:
+            return self.distribution
 
     def set_categorical(self, is_categorical: bool, categories: List = None):
         self.is_categorical = is_categorical
