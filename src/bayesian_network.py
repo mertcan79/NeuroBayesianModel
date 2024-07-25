@@ -14,6 +14,7 @@ import statsmodels.api as sm
 from bayesian_node import BayesianNode, CategoricalNode
 from structure_learning import learn_structure
 from parameter_fitting import fit_parameters
+from inference import sample_node
 
 logging.basicConfig(level=logging.ERROR)
 logger = logging.getLogger(__name__)
@@ -66,9 +67,7 @@ class BayesianNetwork:
                     'mean': data[node].mean(),
                     'std': data[node].std()
                 }
-                # Ensure node is initialized with a distribution if required
                 self.nodes[node].distribution = norm(loc=self.parameters[node]['mean'], scale=self.parameters[node]['std'])
-                self.nodes[node].params = {'loc': self.parameters[node]['mean'], 'scale': self.parameters[node]['std']}
             else:
                 X = data[parents]
                 y = data[node]
@@ -78,8 +77,6 @@ class BayesianNetwork:
                     'beta': beta,
                     'std': residuals.std()
                 }
-                # Ensure node has appropriate parameters for regression
-                self.nodes[node].params = {'beta': beta, 'scale': residuals.std()}
 
     def _expectation_step(self, data: pd.DataFrame):
         responsibilities = {}
@@ -193,30 +190,6 @@ class BayesianNetwork:
 
     def get_children(self, node: str) -> List[str]:
         return [edge[1] for edge in self.edges if edge[0] == node]
-
-    @lru_cache(maxsize=128)
-    def sample_node(self, node_name: str, size: int = 1) -> np.ndarray:
-        if node_name not in self.nodes:
-            raise ValueError(f"Node {node_name} not found in the network.")
-        
-        sorted_nodes = self.topological_sort()
-        samples = {node: None for node in sorted_nodes}
-
-        for node in sorted_nodes:
-            parents = self.get_parents(node)
-            if not parents:
-                samples[node] = np.full(size, self.parameters[node]['mean'])
-            else:
-                parent_values = np.column_stack([samples[parent] for parent in parents])
-                beta = self.parameters[node]['beta']
-                std = self.parameters[node]['std']
-                mean = parent_values @ beta
-                samples[node] = np.random.normal(mean, std, size)
-            
-            if node == node_name:
-                break
-
-        return samples[node_name]
 
     def get_confidence_intervals(self):
         ci_results = {}

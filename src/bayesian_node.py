@@ -1,5 +1,5 @@
 import numpy as np
-from typing import List, Tuple, Union
+from typing import List, Tuple, Union, Optional
 from scipy import stats
 import pandas as pd
 from scipy.stats import norm, gamma, dirichlet
@@ -55,6 +55,20 @@ class BayesianNode:
     def set_categorical(self, is_categorical: bool, categories: List = None):
         self.is_categorical = is_categorical
         self.categories = categories
+
+    def sample(self, size: int, parent_values: Optional[np.ndarray] = None) -> np.ndarray:
+        if self.distribution is None:
+            raise ValueError(f"Distribution for node {self.name} is not set")
+
+        # Check the distribution type and handle accordingly
+        if isinstance(self.distribution, stats.rv_continuous):
+            return self.distribution.rvs(size=size)
+        elif isinstance(self.distribution, stats.rv_discrete):
+            return self.distribution.rvs(size=size)
+        elif callable(self.distribution):
+            return self.distribution(parent_values, size)
+        else:
+            raise ValueError(f"Unsupported distribution type for node {self.name}")
 
     def fit(self, node_data, parent_data=None):
         if self.is_categorical:
@@ -133,48 +147,6 @@ class BayesianNode:
                 posterior_counts = prior_counts + counts
                 self.distribution[combination] = dirichlet(posterior_counts)
 
-    def sample(self, size: int, parent_values: pd.DataFrame = None) -> np.ndarray:
-        if parent_values is not None and not parent_values.empty:
-            if isinstance(self.distribution, dict):
-                # Handle categorical nodes with parents
-                parent_combinations = tuple(parent_values.apply(tuple, axis=1))
-                if parent_combinations in self.distribution:
-                    probs = self.distribution[parent_combinations].rvs(size=size)
-                    return probs
-                else:
-                    raise ValueError(f"Parent combination not found in distribution for node {self.name}")
-            elif isinstance(self.distribution, tuple):
-                if len(self.distribution) == 2:  # Gaussian distribution
-                    mean, std = self.distribution
-                    return np.random.normal(mean, std, size=size)
-                elif len(self.distribution) > 2:  # Linear model
-                    intercept, *coefficients = self.distribution
-                    parent_values_array = parent_values.values
-                    mean = intercept + np.sum(parent_values_array * coefficients, axis=1)
-                    return np.random.normal(mean, scale=1.0, size=size)  # Assuming unit variance
-            elif isinstance(self.distribution, stats.rv_continuous):
-                return self.distribution.rvs(size=size)
-            elif isinstance(self.distribution, stats.rv_discrete):
-                return self.distribution.rvs(size=size)
-            elif callable(self.distribution):
-                return self.distribution(parent_values, size)
-            else:
-                raise ValueError(f"Unsupported distribution type for node {self.name}")
-        else:
-            if isinstance(self.distribution, tuple):
-                if len(self.distribution) == 2:  # Gaussian distribution
-                    mean, std = self.distribution
-                    std = abs(std)  # Ensure std is non-negative
-                    return np.random.normal(mean, std, size=size)
-            elif isinstance(self.distribution, stats.rv_continuous):
-                return self.distribution.rvs(size=size)
-            elif isinstance(self.distribution, stats.rv_discrete):
-                return self.distribution.rvs(size=size)
-            elif callable(self.distribution):
-                return self.distribution(size=size)
-            else:
-                raise ValueError(f"Unsupported distribution type for node {self.name}")
-
     def log_probability(self, value: Union[float, str], parent_values: Tuple = None) -> float:
         if self.distribution is None:
             raise ValueError(f"Distribution for node {self.name} is not set")
@@ -218,15 +190,25 @@ class CategoricalNode(BayesianNode):
         node.cpt = np.array(data['cpt']) if data['cpt'] is not None else None
         return node
 
-    def fit(self, data, parent_data=None):
-        if parent_data is None or len(parent_data) == 0:
-            counts = np.bincount(data, minlength=len(self.categories))
-            self.distribution = stats.multinomial(n=1, p=counts / np.sum(counts))
-            self.parameters = {"p": self.distribution.p}
-            self.cpt = self.parameters["p"]
+    def sample(self, size: int, parent_samples: Optional[np.ndarray] = None) -> np.ndarray:
+        if self.cpt is None:
+            raise ValueError("Conditional Probability Table (CPT) is not set")
+
+        if parent_samples is not None:
+            parent_index = np.ravel_multi_index(parent_samples.T, [len(set(parent_samples[:,i])) for i in range(parent_samples.shape[1])])
+            probs = self.cpt[parent_index]
         else:
-            parent_combinations = np.array(np.meshgrid(*[range(len(set(parent_data[col]))) for col in parent_data.columns])).T.reshape(-1, parent_data.shape[1])
-            
+            probs = self.cpt
+
+        return np.random.choice(self.categories, size=size, p=probs)
+
+    def fit(self, data: np.ndarray, parent_data: Optional[np.ndarray] = None):
+        if parent_data is None or parent_data.size == 0:
+            counts = np.bincount(data, minlength=len(self.categories))
+            self.cpt = counts / np.sum(counts)
+            self.parameters = {"p": self.cpt}
+        else:
+            parent_combinations = np.array(np.meshgrid(*[range(len(set(parent_data[:, col]))) for col in range(parent_data.shape[1])])).T.reshape(-1, parent_data.shape[1])
             self.cpt = np.zeros((len(parent_combinations), len(self.categories)))
             for i, parent_comb in enumerate(parent_combinations):
                 mask = np.all(parent_data == parent_comb, axis=1)
@@ -234,7 +216,6 @@ class CategoricalNode(BayesianNode):
                 self.cpt[i] = counts / np.sum(counts)
 
             self.parameters = {"cpt": self.cpt}
-        return self  # Return self to allow method chaining
 
     def log_probability(self, value, parent_values=None):
         if self.cpt is None:
@@ -246,9 +227,6 @@ class CategoricalNode(BayesianNode):
             parent_index = np.ravel_multi_index(parent_values, [len(set(parent_values[i])) for i in range(len(parent_values))])
             return np.log(self.cpt[parent_index, value])
 
-    def sample(self, size=1, parent_samples=None):
-        probs = self.get_conditional_probabilities(parent_samples)
-        return np.random.choice(self.categories, size=size, p=probs)
 
     def get_conditional_probabilities(self, parent_samples=None):
         if parent_samples is None or len(parent_samples) == 0:
