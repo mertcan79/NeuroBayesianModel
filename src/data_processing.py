@@ -3,6 +3,7 @@ import numpy as np
 from sklearn.impute import SimpleImputer
 from sklearn.preprocessing import StandardScaler
 from typing import List, Tuple, Dict
+from scipy import stats
 
 def optimize_data_types(df: pd.DataFrame) -> pd.DataFrame:
     """
@@ -27,6 +28,13 @@ def select_features(behavioral: pd.DataFrame, hcp: pd.DataFrame,
     hcp = hcp[hcp_features].copy()
     behavioral = behavioral[behavioral_features].copy()
     return behavioral, hcp
+
+def transform_skewed_features(data: pd.DataFrame, threshold: float = 0.5) -> pd.DataFrame:
+    for col in data.select_dtypes(include=[np.number]).columns:
+        skewness = stats.skew(data[col].dropna())
+        if abs(skewness) > threshold:
+            data[col] = np.log1p(data[col] - data[col].min())
+    return data
 
 def preprocess_data(data: pd.DataFrame, categorical_columns: List[str], index: str = None) -> pd.DataFrame:
     data = data.copy()
@@ -53,7 +61,8 @@ def preprocess_data(data: pd.DataFrame, categorical_columns: List[str], index: s
         if col in data.columns:
             categorical_imputer = SimpleImputer(strategy='most_frequent')
             data[[col]] = categorical_imputer.fit_transform(data[[col]])
-    
+
+    data = transform_skewed_features(data)
     # Apply StandardScaler to numeric columns
     scaler = StandardScaler()
     data[numeric_columns] = scaler.fit_transform(data[numeric_columns])
