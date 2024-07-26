@@ -43,6 +43,7 @@ archive/
 visuals/
 creds/
 notebooks/
+logs/
 
 /src/main.ipynb
 
