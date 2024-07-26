@@ -4,7 +4,7 @@ from typing import Dict
 from scipy import stats
 import logging
 from scipy.stats import norm, gamma, dirichlet
-
+import statsmodels.api as sm
 from bayesian_node import BayesianNode, CategoricalNode
 
 logger = logging.getLogger(__name__)

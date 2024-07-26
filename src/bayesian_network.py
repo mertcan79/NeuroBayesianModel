@@ -21,29 +21,37 @@ logging.basicConfig(level=logging.ERROR)
 logger = logging.getLogger(__name__)
 
 class BayesianNetwork:
-    def __init__(self, method="k2", max_parents=2, iterations=300, categorical_columns=None):
+    def __init__(self, method="nsl", max_parents=4, iterations=300, categorical_columns=None):
         self.method = method
         self.max_parents = max_parents
         self.iterations = iterations
         self.categorical_columns = categorical_columns or []
         self.nodes = {}
-        self.edges = []  # List to store edges
+        self.edges = []
         self.data = None
         self.parameters = {}
         self.inference = None
 
+    def fit(self, data: pd.DataFrame, prior_edges=None):
+        self.data = self.preprocess_data(data)
+        self.nodes = self._create_nodes_from_data(data)
+        self._learn_structure(data, prior_edges)
+        self._initialize_parameters(data)
+        self._fit_nodes(data)
+        self.inference = Inference(nodes=self.nodes)
+
+    def _fit_nodes(self, data: pd.DataFrame):
+        for node_name, node in self.nodes.items():
+            parents = self.get_parents(node_name)
+            if parents:
+                parent_data = data[parents]
+                node.fit(data[node_name], parent_data)
+            else:
+                node.fit(data[node_name])
+
     def add_node(self, node: 'BayesianNode'):
         self.nodes[node.name] = node
 
-    def add_edge(self, parent_name: str, child_name: str):
-        if parent_name not in self.nodes or child_name not in self.nodes:
-            raise ValueError("Parent or child node not found in the network")
-        parent_node = self.nodes[parent_name]
-        child_node = self.nodes[child_name]
-        parent_node.add_child(child_node)
-        child_node.add_parent(parent_node)
-        if (parent_name, child_name) not in self.edges:
-            self.edges.append((parent_name, child_name))
 
     def remove_edge(self, parent, child):
         self.edges.remove((parent, child))
@@ -61,75 +69,49 @@ class BayesianNetwork:
             raise ValueError(f"Node {node_name} not found in the network.")
         return self.nodes[node_name]
 
-    def fit(self, data: pd.DataFrame, prior_edges=None, progress_callback=None, max_iter=100, tol=1e-3):
-        self.data = self.preprocess_data(data)
-        self.nodes = self._create_nodes_from_data(data)
-        self._learn_structure(data, prior_edges)
-        self._initialize_parameters(data)
-        self._fit_nodes(data)
-        self.inference = Inference(nodes=self.nodes)
+    def sample(self, node_name: str, size: int = 1, parent_values: Optional[np.ndarray] = None) -> np.ndarray:
+        try:
+            node = self.get_node(node_name)
+            return node.sample(size, parent_values)
+        except KeyError:
+            print(f"Error: Node {node_name} not found in the network")
+            return None
+        except Exception as e:
+            print(f"Error sampling from node {node_name}: {str(e)}")
+            return None
 
-    def _fit_nodes(self, data):
-        for node_name, node in self.nodes.items():
-            parent_names = self.get_parents(node_name)
-            node_data = data[node_name]
-            parent_data = data[parent_names] if parent_names else None
-            try:
-                node.fit(node_data, parent_data)
-            except Exception as e:
-                print(f"Error fitting node {node_name}: {str(e)}")
-                # Set a default distribution for the node
-                node.distribution = {'mean': np.mean(node_data), 'std': np.std(node_data) if len(node_data) > 1 else 1e-6}
-                node.fitted = True
+    def _learn_structure(self, data: pd.DataFrame, prior_edges=None):
+
+        learned_edges = learn_structure(data, method=self.method, max_parents=self.max_parents, 
+                                        iterations=self.iterations, prior_edges=prior_edges)
+        
+        self.edges = []  # Clear existing edges
+        for parent, child in learned_edges:
+            if parent in self.nodes and child in self.nodes:
+                self.add_edge(parent, child)
+            else:
+                print(f"Warning: Edge {parent} -> {child} references non-existent node")
+
+    def add_edge(self, parent_name: str, child_name: str):
+        if parent_name not in self.nodes or child_name not in self.nodes:
+            raise ValueError("Parent or child node not found in the network")
+        parent_node = self.nodes[parent_name]
+        child_node = self.nodes[child_name]
+        parent_node.add_child(child_node)
+        child_node.add_parent(parent_node)
+        if (parent_name, child_name) not in self.edges:
+            self.edges.append((parent_name, child_name))
 
     def _create_nodes_from_data(self, data: pd.DataFrame) -> Dict[str, BayesianNode]:
         nodes = {}
         for column in data.columns:
             if column in self.categorical_columns:
-                categories = data[column].unique()
-                node = CategoricalNode(name=column, categories=categories)
+                categories = data[column].unique().tolist()
+                nodes[column] = CategoricalNode(name=column, categories=categories)
             else:
-                node = BayesianNode(name=column)
-            nodes[column] = node
+                nodes[column] = BayesianNode(name=column)
+        print(f"Created {len(nodes)} nodes in total")
         return nodes
-
-    def sample(self, node_name: str, size: int = 1, parent_values: Optional[np.ndarray] = None) -> np.ndarray:
-        node = self.get_node(node_name)
-        return node.sample(size, parent_values)
-
-    def compute_sensitivity(self, target_node_name: str, num_samples: int = 1000) -> Dict[str, float]:
-        if target_node_name not in self.nodes:
-            raise ValueError(f"Node {target_node_name} not found in the network.")
-        
-        target_node = self.nodes[target_node_name]
-        target_samples = self.inference.sample_node(target_node_name, num_samples)
-        
-        sensitivities = {}
-        for node_name, node in self.nodes.items():
-            if node_name == target_node_name:
-                continue
-            
-            other_samples = self.inference.sample_node(node_name, num_samples)
-            
-            if isinstance(target_node, CategoricalNode) and isinstance(node, CategoricalNode):
-                sensitivity = self._compute_categorical_correlation(target_samples, other_samples)
-            elif isinstance(target_node, BayesianNode) and isinstance(node, BayesianNode):
-                sensitivity = np.corrcoef(target_samples, other_samples)[0, 1]
-            else:
-                raise ValueError(f"Sensitivity computation not supported for node types: "
-                                f"'{type(target_node).__name__}' and '{type(node).__name__}'")
-            
-            sensitivities[node_name] = sensitivity
-        
-        return sensitivities
-
-    def _compute_categorical_correlation(self, x, y) -> float:
-        contingency_table = pd.crosstab(x, y)
-        chi2, _, _, _ = chi2_contingency(contingency_table)
-        n = len(x)
-        min_dim = min(len(np.unique(x)), len(np.unique(y))) - 1
-        cramer_v = np.sqrt(chi2 / (n * min_dim))
-        return cramer_v
 
     def compute_node_influence(self, target_node_name: str) -> Dict[str, float]:
         if target_node_name not in self.nodes:
@@ -180,20 +162,21 @@ class BayesianNetwork:
         return implications
 
     def _learn_structure(self, data: pd.DataFrame, prior_edges=None):
-        self.edges = learn_structure(data, method=self.method, max_parents=self.max_parents, iterations=self.iterations, prior_edges=prior_edges)
+        learned_edges = learn_structure(data, method=self.method, max_parents=self.max_parents, 
+                                        iterations=self.iterations, prior_edges=prior_edges)
+
         
-        for parent, child in self.edges:
-            if parent not in self.nodes or child not in self.nodes:
+        if not learned_edges:
+            print("Warning: No edges learned. Check your structure learning method and data.")
+            return
+        
+        self.edges = []  # Clear existing edges
+        for parent, child in learned_edges:
+            if parent in self.nodes and child in self.nodes:
+                self.add_edge(parent, child)
+            else:
                 print(f"Warning: Edge {parent} -> {child} references non-existent node")
-                continue
-            
-            parent_node = self.nodes[parent]
-            child_node = self.nodes[child]
-            
-            if child_node not in parent_node.children:
-                parent_node.children.append(child_node)
-            if parent_node not in child_node.parents:
-                child_node.parents.append(parent_node)
+        
 
     def _initialize_parameters(self, data: pd.DataFrame, prior: Dict[str, Any] = None):
         if prior is None:
@@ -316,6 +299,9 @@ class BayesianNetwork:
         return instance
 
     def preprocess_data(self, data: pd.DataFrame) -> pd.DataFrame:
+        data = data.fillna(data.mean())  # Fill NaNs with mean values
+        data = data.replace([np.inf, -np.inf], np.nan).dropna()  # Remove inf values
         for col in self.categorical_columns:
             data[col] = data[col].astype('category')
         return data
+

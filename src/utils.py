@@ -140,8 +140,6 @@ def network_to_dict(nodes, method, max_parents, categorical_columns):
     }
 
 def network_from_dict(data):
-
-
     bn = BayesianNetwork(method=data['method'], max_parents=data['max_parents'], categorical_columns=data['categorical_columns'])
     bn.nodes = {}
     for name, node_data in data['nodes'].items():

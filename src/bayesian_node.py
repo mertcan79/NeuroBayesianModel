@@ -1,9 +1,10 @@
 import numpy as np
-from typing import List, Tuple, Union, Optional
+from typing import List, Tuple, Union, Optional, Dict
 from scipy import stats
 import pandas as pd
 from scipy.stats import norm, gamma, dirichlet, multinomial
 from scipy import stats
+import statsmodels.api as sm
 
 class BayesianNode:
     def __init__(self, name: str, distribution=None):
@@ -94,6 +95,12 @@ class BayesianNode:
             return self.transform(data)
         return data
 
+    def get_conditional_mean(self, parent_values):
+        if self.parents:
+            return self.distribution['intercept'] + np.dot(parent_values, self.distribution['beta'])
+        else:
+            return self.distribution['mean']
+
     def apply_inverse_transform(self, data):
         """Apply inverse transformation if set."""
         if self.inverse_transform:
@@ -114,73 +121,43 @@ class BayesianNode:
             raise ValueError(f"Unsupported distribution type for node {self.name}")
 
     def fit(self, node_data, parent_data=None):
-        if self.is_categorical:
+        if self.is_categorical or pd.api.types.is_categorical_dtype(node_data):
             self.fit_categorical(node_data, parent_data)
         else:
             self.fit_continuous(node_data, parent_data)
 
+    def fit_categorical(self, node_data, parent_data):
+        self.is_categorical = True
+        self.categories = sorted(node_data.unique())
+        
+        if parent_data is None or parent_data.empty:
+            counts = node_data.value_counts(normalize=True)
+            self.distribution = counts.reindex(self.categories, fill_value=0).values
+        else:
+            self.distribution = {}
+            for parent_combo in parent_data.drop_duplicates().itertuples(index=False):
+                mask = (parent_data == parent_combo).all(axis=1)
+                counts = node_data[mask].value_counts(normalize=True)
+                self.distribution[parent_combo] = counts.reindex(self.categories, fill_value=0).values
+
+        self.fitted = True
+
     def fit_continuous(self, node_data, parent_data):
         if parent_data is None or parent_data.empty:
-            # Handle the case with no parents
             self.distribution = {
                 'mean': np.mean(node_data),
                 'std': np.std(node_data) if len(node_data) > 1 else 1e-6
             }
         else:
-            # Handle the case with parents
-            X = parent_data.values
-            y = node_data.values
-
-            n, d = X.shape
-            if n <= 1 or d == 0:
-                # Not enough data points or features
-                self.distribution = {
-                    'mean': np.mean(y),
-                    'std': np.std(y) if len(y) > 1 else 1e-6
-                }
-            else:
-                try:
-                    X_mean = np.mean(X, axis=0)
-                    y_mean = np.mean(y)
-                    
-                    # Use ridge regression to avoid singularity issues
-                    ridge_lambda = 1e-5
-                    XTX = X.T @ X + ridge_lambda * np.eye(d)
-                    beta = np.linalg.solve(XTX, X.T @ y)
-                    
-                    residuals = y - X @ beta
-                    
-                    self.distribution = {
-                        'beta': beta,
-                        'intercept': y_mean - X_mean @ beta,
-                        'std': np.std(residuals) if len(residuals) > 1 else 1e-6
-                    }
-                except np.linalg.LinAlgError:
-                    # Fallback to simple mean and std if linear regression fails
-                    self.distribution = {
-                        'mean': np.mean(y),
-                        'std': np.std(y) if len(y) > 1 else 1e-6
-                    }
+            X = sm.add_constant(parent_data)
+            model = sm.OLS(node_data, X).fit()
+            self.distribution = {
+                'intercept': model.params[0],
+                'beta': model.params[1:],
+                'std': model.resid.std()
+            }
 
         self.fitted = True
-
-    def fit_categorical(self, node_data, parent_data):
-        if parent_data is None or parent_data.empty:
-            # Dirichlet conjugate prior
-            prior_counts = np.ones(len(self.categories))
-            counts = np.bincount(node_data, minlength=len(self.categories))
-            posterior_counts = prior_counts + counts
-            self.distribution = dirichlet(posterior_counts)
-        else:
-            # Dirichlet for each parent combination
-            parent_combinations = parent_data.apply(tuple, axis=1).unique()
-            self.distribution = {}
-            for combination in parent_combinations:
-                mask = (parent_data.apply(tuple, axis=1) == combination)
-                counts = np.bincount(node_data[mask], minlength=len(self.categories))
-                prior_counts = np.ones(len(self.categories))
-                posterior_counts = prior_counts + counts
-                self.distribution[combination] = dirichlet(posterior_counts)
 
     def log_probability(self, value: Union[float, str], parent_values: Tuple = None) -> float:
         if self.distribution is None:
@@ -197,16 +174,18 @@ class BayesianNode:
                 mean = np.dot(mean, parent_array)
             return stats.norm.logpdf(value, mean, std)
 
+    def compute_sensitivity(self, target_node: str, evidence_nodes: List[str]) -> Dict[str, float]:
+        if self.inference is None:
+            raise ValueError("Inference object not initialized. Call fit() first.")
+        return self.inference.compute_sensitivity(target_node, evidence_nodes)
+
 class CategoricalNode(BayesianNode):
-    def __init__(self, name: str, categories=None, parents=None, params=None):
-        super().__init__(name, parents)
-        self.name = name
-        self.categories = list(categories) if categories else []
+    def __init__(self, name, categories=None):
+        super().__init__(name)
+        self.categories = list(categories) if categories is not None else []
         self.original_categories = categories
-        self.distribution = stats.multinomial
-        self.cpt = None
-        self.params = params
-        self.fitted = False
+        self.distribution = None
+        self.is_categorical = True
 
     def to_dict(self):
         base_dict = super().to_dict()
@@ -223,6 +202,17 @@ class CategoricalNode(BayesianNode):
         node.cpt = np.array(data['cpt']) if data['cpt'] is not None else None
         return node
 
+    def fit(self, data, parent_data=None):
+        if parent_data is not None:
+            # Handle cases with parents using conditional probability tables
+            self._fit_with_parents(data, parent_data)
+        else:
+            # Handle cases without parents using a simple categorical distribution
+            counts = data.value_counts()
+            self.distribution = (counts / counts.sum()).to_dict()
+            self.fitted = True
+        print(f"Fitted CategoricalNode {self.name}")
+
     def set_distribution(self, dist):
         self.distribution = dist
 
@@ -238,17 +228,8 @@ class CategoricalNode(BayesianNode):
             self.children.append(child)
 
     def set_categorical(self, categories):
-        self.categories = list(categories)  # Convert to list if not already
-
-    def fit(self, data, parent_data=None):
-        if parent_data is not None:
-            # Handle cases with parents using conditional probability tables
-            self._fit_with_parents(data, parent_data)
-        else:
-            # Handle cases without parents using a simple categorical distribution
-            counts = data.value_counts()
-            self.distribution = (counts / counts.sum()).to_dict()
-            self.fitted = True
+        self.categories = list(categories)
+        self.original_categories = categories
 
     def _fit_with_parents(self, data, parent_data):
         unique_parent_combinations = parent_data.drop_duplicates()
@@ -291,5 +272,22 @@ class CategoricalNode(BayesianNode):
             raise ValueError(f"No distribution for parent values {parent_values}.")
         choices = np.random.choice(self.categories, size=size, p=list(distribution.values()))
         return choices
+
+    def get_conditional_probs(self, parent_values):
+        if not self.parents:
+            return self.distribution
+        
+        parent_values = tuple(parent_values)
+        if parent_values in self.distribution:
+            return self.distribution[parent_values]
+        else:
+            # If we don't have a distribution for this parent combination, use uniform
+            return np.ones(len(self.categories)) / len(self.categories)
+
+    def get_conditional_mean(self, parent_values):
+        # For categorical nodes, we don't have a meaningful "mean"
+        # We can return the expected value based on the probabilities
+        probs = self.get_conditional_probs(parent_values)
+        return np.dot(range(len(self.categories)), probs)
 
 Node = Union[BayesianNode, CategoricalNode]

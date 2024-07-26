@@ -14,20 +14,19 @@ logging.basicConfig(level=logging.ERROR)
 logger = logging.getLogger(__name__)
 
 class BayesianModel:
-    def __init__(self, method='nsl', max_parents=2, iterations=100, categorical_columns=None):
+    def __init__(self, method="nsl", max_parents=4, iterations=300, categorical_columns=None):
         self.method = method
         self.max_parents = max_parents
         self.iterations = iterations
         self.categorical_columns = categorical_columns or []
-        self.network = BayesianNetwork(method=method, max_parents=max_parents, iterations=iterations, categorical_columns=categorical_columns)
+        self.network = BayesianNetwork(method=method, max_parents=max_parents, 
+                                       iterations=iterations, 
+                                       categorical_columns=self.categorical_columns)
         self.data = None
 
-    def fit(self, data: pd.DataFrame, prior_edges: List[Tuple[str, str]] = None, progress_callback=None):
+    def fit(self, data, prior_edges=None):
         self.data = data
-        self.network.fit(data, prior_edges, progress_callback)
-        if progress_callback:
-            progress_callback("Model fitting complete")
-        logger.info("Bayesian model fitting complete")
+        self.network.fit(data, prior_edges)
 
     def preprocess_data(self, data: pd.DataFrame) -> pd.DataFrame:
         """Preprocess data for the Bayesian network."""
