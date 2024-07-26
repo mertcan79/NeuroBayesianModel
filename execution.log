@@ -1,0 +1,15 @@
+2024-07-27 02:32:25,175 Logging is set up.
+2024-07-27 02:32:25,176 Error writing results to JSON: 'dict' object has no attribute 'explain_structure_extended'
+2024-07-27 02:32:25,177 Error writing summary to JSON: write_summary_to_json() missing 1 required positional argument: 'results'
+2024-07-27 02:33:54,877 Logging is set up.
+2024-07-27 02:33:54,877 Error writing results to JSON: 'DummyModel' object has no attribute 'compute_edge_probabilities'
+2024-07-27 02:33:54,878 Error writing summary to JSON: 'str' object has no attribute 'explain_structure_extended'
+2024-07-27 02:37:40,780 Logging is set up.
+2024-07-27 02:37:40,781 Error writing results to JSON: 'dict' object has no attribute 'drop'
+2024-07-27 02:37:40,781 Error writing summary to JSON: 'DummyModel' object has no attribute 'nodes'
+2024-07-27 02:39:48,023 Logging is set up.
+2024-07-27 02:39:48,035 Error writing results to JSON: 'dict' object has no attribute 'drop'
+2024-07-27 02:39:48,036 Error writing summary to JSON: 'DummyModel' object has no attribute 'compute_sensitivity'
+2024-07-27 02:41:27,131 Logging is set up.
+2024-07-27 02:41:27,132 Error writing results to JSON: 'dict' object has no attribute 'drop'
+2024-07-27 02:41:27,133 Error writing summary to JSON: 'NoneType' object has no attribute 'items'

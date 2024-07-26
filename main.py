@@ -1,22 +1,22 @@
 import logging
+from logging_config import setup_logging
 import os
-import sys
 from dotenv import load_dotenv
 import pandas as pd
-import numpy as np
-from scipy import stats
-from sklearn.preprocessing import StandardScaler
-from sklearn.impute import SimpleImputer
 from src.data_processing import prepare_data
 from src.modeling import BayesianModel
 from src.bayesian_network import BayesianNetwork
 from utils import write_results_to_json, write_summary_to_json
+import numpy as np
 
+# Load environment variables
 load_dotenv()
 
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+# Set up logging
+setup_logging()
 logger = logging.getLogger(__name__)
 
+# Define environment and file paths
 environment = os.getenv('ENVIRONMENT', 'local')
 data_path = os.getenv('LOCAL_DATA_PATH') if environment == 'local' else os.getenv('CLOUD_DATA_PATH')
 processed_data_path = os.getenv('LOCAL_DATA_PATH_PROCESSED') if environment == 'local' else os.getenv('CLOUD_DATA_PATH')
@@ -24,16 +24,13 @@ processed_data_path = os.getenv('LOCAL_DATA_PATH_PROCESSED') if environment == '
 # File paths
 behavioral_path = os.path.join(data_path, 'connectome_behavioral.csv')
 behavioral_path_processed = os.path.join(processed_data_path, 'connectome_behavioral.csv')
-
-
 hcp_path = os.path.join(data_path, 'hcp_freesurfer.csv')
 hcp_path_processed = os.path.join(processed_data_path, 'hcp_freesurfer.csv')
 
 def preprocess_hcp():
     def map_age_to_category(age_str):
-        # Define age bins and corresponding ordinal categories
         bins = ['22-25', '26-30', '31-35', '36+']
-        categories = [1, 2, 3, 4]  # Assigning ordinal values to age ranges
+        categories = [1, 2, 3, 4]
         
         if pd.isna(age_str):
             return np.nan
@@ -49,15 +46,20 @@ def preprocess_hcp():
             data['Age'] = data['Age'].apply(map_age_to_category)
         return data
 
-    # Load your data
-    behavioral_data = pd.read_csv(behavioral_path)
-    hcp_data = pd.read_csv(hcp_path)
-    # Process Age column
-    behavioral_data = process_age_gender(behavioral_data)
+    try:
+        # Load your data
+        behavioral_data = pd.read_csv(behavioral_path)
+        hcp_data = pd.read_csv(hcp_path)
+        
+        # Process Age column
+        behavioral_data = process_age_gender(behavioral_data)
 
-    # You can now save the processed data back to CSV if needed or pass it directly to prepare_data
-    behavioral_data.to_csv('/Users/macbookair/Documents/NeuroBayesianModel/data/processed/connectome_behavioral.csv', index=False)
-    hcp_data.to_csv('/Users/macbookair/Documents/NeuroBayesianModel/data/processed/hcp_freesurfer.csv', index=False)
+        # Save the processed data
+        behavioral_data.to_csv(behavioral_path_processed, index=False)
+        hcp_data.to_csv(hcp_path_processed, index=False)
+        logger.info("Preprocessing completed and data saved.")
+    except Exception as e:
+        logger.error(f"Error during preprocessing: {str(e)}")
 
 def main():
     try:
@@ -125,4 +127,7 @@ def main():
 
         logger.info("Analysis complete.")
     except Exception as e:
-            logger.error(f"An error occurred: {str(e)}")
+        logger.error(f"An error occurred: {str(e)}")
+
+if __name__ == '__main__':
+    main()

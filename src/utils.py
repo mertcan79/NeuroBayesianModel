@@ -3,11 +3,24 @@ import json
 from datetime import datetime
 import numpy as np
 import pandas as pd
+from typing import Dict, Any, List
 from statsmodels.stats.outliers_influence import variance_inflation_factor
 from statsmodels.stats.diagnostic import het_breuschpagan
 from sklearn.feature_selection import mutual_info_regression
-from scipy import stats
-from typing import Dict, Any, List, Tuple
+
+def make_serializable(obj):
+    if isinstance(obj, np.ndarray):
+        return obj.tolist()
+    elif isinstance(obj, np.integer):
+        return int(obj)
+    elif isinstance(obj, np.floating):
+        return float(obj)
+    elif isinstance(obj, dict):
+        return {k: make_serializable(v) for k, v in obj.items()}
+    elif isinstance(obj, list):
+        return [make_serializable(v) for v in obj]
+    else:
+        return obj
 
 def write_results_to_json(network, data: pd.DataFrame, results: Dict[str, Any], filename: str = None):
     if filename is None:
@@ -19,20 +32,6 @@ def write_results_to_json(network, data: pd.DataFrame, results: Dict[str, Any], 
         os.makedirs(log_folder)
     
     file_path = os.path.join(log_folder, filename)
-    
-    def make_serializable(obj):
-        if isinstance(obj, np.ndarray):
-            return obj.tolist()
-        elif isinstance(obj, np.integer):
-            return int(obj)
-        elif isinstance(obj, np.floating):
-            return float(obj)
-        elif isinstance(obj, dict):
-            return {k: make_serializable(v) for k, v in obj.items()}
-        elif isinstance(obj, list):
-            return [make_serializable(v) for v in obj]
-        else:
-            return obj
 
     # Add all analysis results
     results["network_structure"] = network.explain_structure_extended()
@@ -68,8 +67,12 @@ def write_results_to_json(network, data: pd.DataFrame, results: Dict[str, Any], 
 
     serializable_results = make_serializable(results)
     
-    with open(file_path, 'w') as f:
-        json.dump(serializable_results, f, indent=2)
+    try:
+        with open(file_path, 'w') as f:
+            json.dump(serializable_results, f, indent=2)
+        print(f"Results successfully written to {file_path}")
+    except Exception as e:
+        print(f"Error writing results to file: {str(e)}")
 
 def write_summary_to_json(network, results: Dict[str, Any], filename: str = None):
     if filename is None:
@@ -79,6 +82,7 @@ def write_summary_to_json(network, results: Dict[str, Any], filename: str = None
     log_folder = "logs"
     if not os.path.exists(log_folder):
         os.makedirs(log_folder)
+    
     file_path = os.path.join(log_folder, filename)
 
     summary = {
@@ -95,7 +99,7 @@ def write_summary_to_json(network, results: Dict[str, Any], filename: str = None
         "key_personality_cognition_findings": summarize_personality_cognition(results.get("personality_cognition_relationships")),
         "significant_age_dependent_changes": summarize_age_dependent_changes(results.get("age_dependent_relationships")),
     }
-    
+
     try:
         with open(file_path, 'w') as f:
             json.dump(summary, f, indent=2)
