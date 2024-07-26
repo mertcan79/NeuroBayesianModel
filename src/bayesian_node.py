@@ -6,9 +6,9 @@ from scipy.stats import norm, gamma, dirichlet
 from scipy import stats
 
 class BayesianNode:
-    def __init__(self, name: str, distribution=None, parents=None):
+    def __init__(self, name: str, distribution=None):
         self.name = name
-        self.parents = parents if parents else []
+        self.parents = []
         self.params = None
         self.distribution = distribution
         self.is_categorical = False
@@ -17,6 +17,7 @@ class BayesianNode:
         self.inverse_transform = None  
         self.fitted = False
         self.children = []
+        self.distribution_type = None
 
     def __repr__(self):
         return f"BayesianNode(name={self.name}, distribution={self.distribution}, parents={self.parents})"
@@ -56,8 +57,19 @@ class BayesianNode:
     def set_params(self, params):
         self.params = params
 
-    def set_distribution(self, dist):
-        self.distribution = dist
+    def set_distribution(self, distribution):
+        self.distribution = distribution
+        if isinstance(distribution, dict):
+            if 'mean' in distribution and 'std' in distribution:
+                self.distribution_type = 'gaussian'
+            elif 'beta' in distribution:
+                self.distribution_type = 'linear'
+        elif isinstance(distribution, (stats.rv_continuous, stats.rv_discrete)):
+            self.distribution_type = 'scipy'
+        else:
+            raise ValueError(f"Unsupported distribution type for node {self.name}")
+
+
 
     def get_distribution(self):
         if isinstance(self.distribution, (stats.rv_continuous, stats.rv_discrete)):
@@ -90,17 +102,16 @@ class BayesianNode:
             return self.inverse_transform(data)
         return data
 
-    def sample(self, size: int, parent_values: Optional[np.ndarray] = None) -> np.ndarray:
-        if self.distribution is None:
-            raise ValueError(f"Distribution for node {self.name} is not set")
-
-        # Check the distribution type and handle accordingly
-        if isinstance(self.distribution, stats.rv_continuous):
+    def sample(self, size=1, parent_values=None):
+        if self.distribution_type == 'gaussian':
+            return np.random.normal(self.distribution['mean'], self.distribution['std'], size)
+        elif self.distribution_type == 'linear':
+            if parent_values is None:
+                raise ValueError("Parent values required for linear distribution")
+            return self.distribution['intercept'] + np.dot(parent_values, self.distribution['beta']) + \
+                   np.random.normal(0, self.distribution['std'], size)
+        elif self.distribution_type == 'scipy':
             return self.distribution.rvs(size=size)
-        elif isinstance(self.distribution, stats.rv_discrete):
-            return self.distribution.rvs(size=size)
-        elif callable(self.distribution):
-            return self.distribution(parent_values, size)
         else:
             raise ValueError(f"Unsupported distribution type for node {self.name}")
 
@@ -112,56 +123,48 @@ class BayesianNode:
 
     def fit_continuous(self, node_data, parent_data):
         if parent_data is None or parent_data.empty:
-            # Normal-Gamma conjugate prior
-            prior_mean = 0
-            prior_precision = 1
-            prior_shape = 1
-            prior_rate = 1
-
-            n = len(node_data)
-            sample_mean = np.mean(node_data)
-            sample_var = np.var(node_data)
-
-            posterior_mean = (prior_precision * prior_mean + n * sample_mean) / (prior_precision + n)
-            posterior_precision = prior_precision + n
-            posterior_shape = prior_shape + n / 2
-            posterior_rate = prior_rate + 0.5 * (n * sample_var + prior_precision * n * (sample_mean - prior_mean)**2 / (prior_precision + n))
-
+            # Handle the case with no parents
             self.distribution = {
-                'mean': posterior_mean,
-                'precision': posterior_precision,
-                'shape': posterior_shape,
-                'rate': posterior_rate
+                'mean': np.mean(node_data),
+                'std': np.std(node_data) if len(node_data) > 1 else 1e-6
             }
         else:
-            # Multivariate Normal-Wishart for multiple parents
+            # Handle the case with parents
             X = parent_data.values
             y = node_data.values
 
             n, d = X.shape
-            prior_mean = np.zeros(d)
-            prior_precision = np.eye(d)
-            prior_df = d + 2
-            prior_scale = np.eye(d)
+            if n <= 1 or d == 0:
+                # Not enough data points or features
+                self.distribution = {
+                    'mean': np.mean(y),
+                    'std': np.std(y) if len(y) > 1 else 1e-6
+                }
+            else:
+                try:
+                    X_mean = np.mean(X, axis=0)
+                    y_mean = np.mean(y)
+                    
+                    # Use ridge regression to avoid singularity issues
+                    ridge_lambda = 1e-5
+                    XTX = X.T @ X + ridge_lambda * np.eye(d)
+                    beta = np.linalg.solve(XTX, X.T @ y)
+                    
+                    residuals = y - X @ beta
+                    
+                    self.distribution = {
+                        'beta': beta,
+                        'intercept': y_mean - X_mean @ beta,
+                        'std': np.std(residuals) if len(residuals) > 1 else 1e-6
+                    }
+                except np.linalg.LinAlgError:
+                    # Fallback to simple mean and std if linear regression fails
+                    self.distribution = {
+                        'mean': np.mean(y),
+                        'std': np.std(y) if len(y) > 1 else 1e-6
+                    }
 
-            X_mean = X.mean(axis=0)
-            S = np.cov(X, rowvar=False) * (n - 1)
-            beta = np.linalg.solve(S, np.dot(X.T, y))
-
-            posterior_mean = np.linalg.solve(prior_precision + n * np.linalg.inv(S), 
-                                             np.dot(prior_precision, prior_mean) + n * np.dot(np.linalg.inv(S), X_mean))
-            posterior_precision = prior_precision + n * np.linalg.inv(S)
-            posterior_df = prior_df + n
-            posterior_scale = prior_scale + S + \
-                              n * np.outer(X_mean - posterior_mean, np.dot(np.linalg.inv(S), X_mean - posterior_mean))
-
-            self.distribution = {
-                'mean': posterior_mean,
-                'precision': posterior_precision,
-                'df': posterior_df,
-                'scale': posterior_scale,
-                'beta': beta
-            }
+        self.fitted = True
 
     def fit_categorical(self, node_data, parent_data):
         if parent_data is None or parent_data.empty:

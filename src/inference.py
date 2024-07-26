@@ -12,39 +12,28 @@ logger.setLevel(logging.WARNING)
 class Inference:
     def __init__(self, nodes):
         self.nodes = nodes
+        self.sampled_values = {}
 
-    def sample_node(self, node_name, size):
-        # Ensure the node exists
-        if node_name not in self.nodes:
-            raise ValueError(f"Node {node_name} not found in the network.")
+    def sample_node(self, node_name, size=1, depth=0, visited=None):
+        if visited is None:
+            visited = set()
+        if depth > 100 or node_name in visited:  # Depth limit of 100
+            return np.zeros(size)
         
+        visited.add(node_name)
         node = self.nodes[node_name]
         distribution = node.distribution
+
+        if isinstance(distribution, dict):
+            if 'mean' in distribution and 'std' in distribution:
+                return np.random.normal(distribution['mean'], distribution['std'], size)
+            elif 'beta' in distribution:
+                parents = node.parents
+                parent_samples = [self.sample_node(parent.name, size, depth+1, visited.copy()) for parent in parents]
+                parent_values = np.column_stack(parent_samples)
+                return distribution['intercept'] + parent_values @ distribution['beta'] + np.random.normal(0, distribution['std'], size=size)
         
-        if distribution is None:
-            # Handle categorical nodes or nodes without a set distribution
-            if node.is_categorical:
-                categories = node.categories
-                probabilities = node.probabilities if hasattr(node, 'probabilities') else None
-                if probabilities is None:
-                    # If probabilities are not set, assume uniform distribution
-                    probabilities = [1/len(categories)] * len(categories)
-                return np.random.choice(categories, size=size, p=probabilities)
-            else:
-                # For continuous nodes without a distribution, return the mean or 0
-                return np.full(size, getattr(node, 'mean', 0))
-        
-        # Check if the distribution is a frozen distribution from scipy.stats
-        if isinstance(distribution, rv_continuous) or isinstance(distribution, rv_discrete):
-            return distribution.rvs(size=size)
-        
-        if isinstance(distribution, tuple) and len(distribution) == 2:
-            # Example for Normal distribution
-            mean, std_dev = distribution
-            return np.random.normal(loc=mean, scale=std_dev, size=size)
-        
-        # Add handling for other distribution types as needed
-        raise ValueError(f"Unsupported distribution type for node {node_name}: {type(distribution).__name__}")
+        raise ValueError(f"Unsupported distribution type for node {node_name}")
         
     def __repr__(self):
         return f"Inference(nodes={list(self.nodes.keys())})"

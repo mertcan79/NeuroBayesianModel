@@ -1,8 +1,8 @@
 import numpy as np
 import pandas as pd
 from typing import Dict, List, Tuple
-from pgmpy.estimators import HillClimbSearch, BicScore, K2Score, BDeuScore
 import logging
+import statsmodels.api as sm
 
 from bayesian_node import BayesianNode, CategoricalNode
 
@@ -32,6 +32,10 @@ def learn_structure(data: pd.DataFrame, method: str = 'k2', max_parents: int = 2
 
             logger.info(f"Structure learning complete. Learned {len(edges)} edges.")
             
+            return edges
+
+        elif method == 'nsl':
+            edges = neurological_structure_learning(data, prior_edges, max_parents)
             return edges
 
         else:
@@ -101,3 +105,39 @@ def score_node(
     complexity_penalty = -0.5 * len(parents) * np.log(len(data))
 
     return likelihood_score + complexity_penalty + prior_score
+
+def neurological_structure_learning(data, prior_edges, max_parents=4, alpha=0.05):
+    nodes = list(data.columns)
+    edges = set(prior_edges)
+    
+    def compute_bic(node, parents):
+        X = data[parents]
+        y = data[node]
+        model = sm.OLS(y, sm.add_constant(X)).fit()
+        bic = model.bic
+        return bic
+    
+    for node in nodes:
+        potential_parents = [n for n in nodes if n != node]
+        current_parents = [p for p, c in prior_edges if c == node]
+        
+        while len(current_parents) < max_parents:
+            best_parent = None
+            best_bic = float('inf')
+            
+            for parent in potential_parents:
+                if parent not in current_parents:
+                    new_parents = current_parents + [parent]
+                    bic = compute_bic(node, new_parents)
+                    
+                    if bic < best_bic:
+                        best_parent = parent
+                        best_bic = bic
+            
+            if best_parent is None or len(current_parents) >= max_parents:
+                break
+            
+            current_parents.append(best_parent)
+            edges.add((best_parent, node))
+    
+    return list(edges)

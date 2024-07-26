@@ -42,7 +42,10 @@ def preprocess_data(data: pd.DataFrame, categorical_columns: List[str]) -> pd.Da
     # Handle 'Gender' column if it exists and is in categorical_columns
     if 'Gender' in data.columns and 'Gender' in categorical_columns:
         data['Gender'] = pd.Categorical(data['Gender']).codes
-    
+
+    if 'MMSE_Score' in data.columns and 'MMSE_Score' in categorical_columns:
+        data['MMSE_Score'] = pd.Categorical(data['MMSE_Score']).codes
+
     # Identify numeric columns
     numeric_columns = data.select_dtypes(include=[np.number]).columns.tolist()
     numeric_columns = [col for col in numeric_columns if col not in categorical_columns]

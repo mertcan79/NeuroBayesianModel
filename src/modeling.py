@@ -24,28 +24,9 @@ class BayesianModel:
 
     def fit(self, data: pd.DataFrame, prior_edges: List[Tuple[str, str]] = None, progress_callback=None):
         self.data = data
-        
-        # Create nodes from data
-        self.network.nodes = self.network._create_nodes_from_data(data)
-        
-        # Learn network structure
-        edges = learn_structure(data, method=self.method, max_parents=self.max_parents, 
-                                iterations=self.iterations, prior_edges=prior_edges)
-        
-        # Update network with learned structure
-        for parent, child in edges:
-            self.network.add_edge(parent, child)
-        
-        # Initialize parameters
-        self.network.categorical_columns = self.categorical_columns
-        self.network._initialize_parameters(data)
-        
-        # Set up inference
-        self.inference = Inference(nodes=self.network.nodes)
-        
+        self.network.fit(data, prior_edges, progress_callback)
         if progress_callback:
             progress_callback("Model fitting complete")
-
         logger.info("Bayesian model fitting complete")
 
     def preprocess_data(self, data: pd.DataFrame) -> pd.DataFrame:
