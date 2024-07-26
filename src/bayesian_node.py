@@ -69,8 +69,6 @@ class BayesianNode:
         else:
             raise ValueError(f"Unsupported distribution type for node {self.name}")
 
-
-
     def get_distribution(self):
         if isinstance(self.distribution, (stats.rv_continuous, stats.rv_discrete)):
             return self.distribution
@@ -200,16 +198,15 @@ class BayesianNode:
             return stats.norm.logpdf(value, mean, std)
 
 class CategoricalNode(BayesianNode):
-    def __init__(self, name: str, parents=None):
+    def __init__(self, name: str, categories=None, parents=None, params=None):
         super().__init__(name, parents)
         self.name = name
-        self.categories = list(range(len(categories)))  # Use integer codes
+        self.categories = list(categories) if categories else []
         self.original_categories = categories
         self.distribution = stats.multinomial
         self.cpt = None
         self.params = params
         self.fitted = False
-
 
     def to_dict(self):
         base_dict = super().to_dict()
@@ -222,7 +219,7 @@ class CategoricalNode(BayesianNode):
 
     @classmethod
     def from_dict(cls, data):
-        node = cls(data['name'], data['categories'], data['params'])
+        node = cls(data['name'], data['categories'])
         node.cpt = np.array(data['cpt']) if data['cpt'] is not None else None
         return node
 
@@ -241,7 +238,7 @@ class CategoricalNode(BayesianNode):
             self.children.append(child)
 
     def set_categorical(self, categories):
-        self.categories = categories            
+        self.categories = list(categories)  # Convert to list if not already
 
     def fit(self, data, parent_data=None):
         if parent_data is not None:
