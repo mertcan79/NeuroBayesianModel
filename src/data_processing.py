@@ -36,6 +36,14 @@ def transform_skewed_features(data: pd.DataFrame, threshold: float = 0.5) -> pd.
             data[col] = np.log1p(data[col] - data[col].min())
     return data
 
+def cap_outliers(data: pd.DataFrame, columns: List[str], quantile: float = 0.8, cap_factor: float = 1.5) -> pd.DataFrame:
+    for col in columns:
+        if col in data.columns:
+            q = data[col].quantile(quantile)
+            cap_value = q * cap_factor
+            data[col] = data[col].clip(upper=cap_value)
+    return data
+
 def preprocess_data(data: pd.DataFrame, categorical_columns: List[str], index: str = None) -> pd.DataFrame:
     data = data.copy()
     
@@ -51,9 +59,14 @@ def preprocess_data(data: pd.DataFrame, categorical_columns: List[str], index: s
     # Identify numeric columns
     numeric_columns = data.select_dtypes(include=[np.number]).columns.tolist()
     numeric_columns = [col for col in numeric_columns if col not in categorical_columns]
+
+    data = cap_outliers(data, numeric_columns)
     
     # Handle numeric columns
     numeric_imputer = SimpleImputer(strategy='median')
+    for col in data.columns:
+        if data[col].isnull().sum() > 0:
+            data[col].fillna(data[col].mean(), inplace=True)
     data[numeric_columns] = numeric_imputer.fit_transform(data[numeric_columns])
     
     # Handle categorical columns

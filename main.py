@@ -6,7 +6,7 @@ import pandas as pd
 from src.data_processing import prepare_data
 from src.modeling import BayesianModel
 from src.bayesian_network import BayesianNetwork
-from utils import write_results_to_json, write_summary_to_json, network_to_dict, network_from_dict
+from utils import write_results_to_json, write_summary_to_json
 
 load_dotenv()
 
@@ -113,6 +113,3 @@ def main():
     write_summary_to_json(model.network, results)
 
     logger.info("Analysis complete.")
-
-if __name__ == "__main__":
-    main()
