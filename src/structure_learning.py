@@ -8,7 +8,7 @@ from bayesian_node import BayesianNode, CategoricalNode
 
 logger = logging.getLogger(__name__)
 
-def learn_structure(data: pd.DataFrame, method: str = 'k2', max_parents: int = 2, iterations: int = 300, prior_edges: List[tuple] = None) -> List[Tuple[str, str]]:
+def learn_structure(data: pd.DataFrame, method: str = 'nsl', max_parents: int = 2, iterations: int = 300, prior_edges: List[tuple] = None) -> List[Tuple[str, str]]:
     try:
         if method == 'hill_climb':
             raise ValueError("Hill climb method is not yet implemented in this function.")

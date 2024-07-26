@@ -14,7 +14,7 @@ logging.basicConfig(level=logging.ERROR)
 logger = logging.getLogger(__name__)
 
 class BayesianModel:
-    def __init__(self, method='k2', max_parents=2, iterations=100, categorical_columns=None):
+    def __init__(self, method='nsl', max_parents=2, iterations=100, categorical_columns=None):
         self.method = method
         self.max_parents = max_parents
         self.iterations = iterations

@@ -2,7 +2,7 @@ import numpy as np
 from typing import List, Tuple, Union, Optional
 from scipy import stats
 import pandas as pd
-from scipy.stats import norm, gamma, dirichlet
+from scipy.stats import norm, gamma, dirichlet, multinomial
 from scipy import stats
 
 class BayesianNode:
@@ -208,6 +208,8 @@ class CategoricalNode(BayesianNode):
         self.distribution = stats.multinomial
         self.cpt = None
         self.params = params
+        self.fitted = False
+
 
     def to_dict(self):
         base_dict = super().to_dict()
@@ -238,49 +240,59 @@ class CategoricalNode(BayesianNode):
         if child not in self.children:
             self.children.append(child)
 
-    def sample(self, size: int, parent_samples: Optional[np.ndarray] = None) -> np.ndarray:
-        if self.cpt is None:
-            raise ValueError("Conditional Probability Table (CPT) is not set")
+    def set_categorical(self, categories):
+        self.categories = categories            
 
-        if parent_samples is not None:
-            parent_index = np.ravel_multi_index(parent_samples.T, [len(set(parent_samples[:,i])) for i in range(parent_samples.shape[1])])
-            probs = self.cpt[parent_index]
+    def fit(self, data, parent_data=None):
+        if parent_data is not None:
+            # Handle cases with parents using conditional probability tables
+            self._fit_with_parents(data, parent_data)
         else:
-            probs = self.cpt
+            # Handle cases without parents using a simple categorical distribution
+            counts = data.value_counts()
+            self.distribution = (counts / counts.sum()).to_dict()
+            self.fitted = True
 
-        return np.random.choice(self.categories, size=size, p=probs)
+    def _fit_with_parents(self, data, parent_data):
+        unique_parent_combinations = parent_data.drop_duplicates()
+        self.distribution = {}
+        for _, parent_combination in unique_parent_combinations.iterrows():
+            parent_values = tuple(parent_combination)
+            subset = data[parent_data.isin(parent_values).all(axis=1)]
+            counts = subset.value_counts()
+            self.distribution[parent_values] = (counts / counts.sum()).to_dict()
+        self.fitted = True
 
-    def fit(self, data: np.ndarray, parent_data: Optional[np.ndarray] = None):
-        if parent_data is None or parent_data.size == 0:
-            counts = np.bincount(data, minlength=len(self.categories))
-            self.cpt = counts / np.sum(counts)
-            self.params = {"p": self.cpt}
+    def log_probability(self, values, parent_values=None):
+        if parent_values is not None:
+            return self._log_probability_with_parents(values, parent_values)
         else:
-            parent_combinations = np.array(np.meshgrid(*[range(len(set(parent_data[:, col]))) for col in range(parent_data.shape[1])])).T.reshape(-1, parent_data.shape[1])
-            self.cpt = np.zeros((len(parent_combinations), len(self.categories)))
-            for i, parent_comb in enumerate(parent_combinations):
-                mask = np.all(parent_data == parent_comb, axis=1)
-                counts = np.bincount(data[mask], minlength=len(self.categories))
-                self.cpt[i] = counts / np.sum(counts)
+            prob = [self.distribution.get(value, 1e-10) for value in values]
+            return np.log(np.prod(prob))
 
-            self.params = {"cpt": self.cpt}
+    def _log_probability_with_parents(self, values, parent_values):
+        prob = 1.0
+        for value, parent_value in zip(values, parent_values):
+            distribution = self.distribution.get(parent_value, {})
+            prob *= distribution.get(value, 1e-10)
+        return np.log(prob)
 
-    def log_probability(self, value, parent_values=None):
-        if self.cpt is None:
-            raise ValueError("Distribution not fitted yet")
-
-        if parent_values is None or len(parent_values) == 0:
-            return np.log(self.cpt[value])
+    def sample(self, size=1, parent_values=None):
+        if parent_values is not None:
+            return self._sample_with_parents(size, parent_values)
         else:
-            parent_index = np.ravel_multi_index(parent_values, [len(set(parent_values[i])) for i in range(len(parent_values))])
-            return np.log(self.cpt[parent_index, value])
+            if not self.fitted:
+                raise ValueError("Node has not been fitted yet.")
+            choices = np.random.choice(self.categories, size=size, p=list(self.distribution.values()))
+            return choices
 
-
-    def get_conditional_probabilities(self, parent_samples=None):
-        if parent_samples is None or len(parent_samples) == 0:
-            return self.cpt
-        else:
-            parent_index = np.ravel_multi_index(parent_samples, [len(set(parent_samples[i])) for i in range(len(parent_samples))])
-            return self.cpt[parent_index]
+    def _sample_with_parents(self, size, parent_values):
+        if not self.fitted:
+            raise ValueError("Node has not been fitted yet.")
+        distribution = self.distribution.get(parent_values, {})
+        if not distribution:
+            raise ValueError(f"No distribution for parent values {parent_values}.")
+        choices = np.random.choice(self.categories, size=size, p=list(distribution.values()))
+        return choices
 
 Node = Union[BayesianNode, CategoricalNode]

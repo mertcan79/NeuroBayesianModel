@@ -183,7 +183,6 @@ class BayesianNetwork:
                     # The distribution for continuous nodes with parents is already set above
                     pass
 
-        print("Parameter initialization complete.")
 
     def _expectation_step(self, data: pd.DataFrame):
         responsibilities = {}
