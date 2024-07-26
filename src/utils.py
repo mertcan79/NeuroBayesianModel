@@ -3,11 +3,9 @@ import json
 from datetime import datetime
 import numpy as np
 import pandas as pd
-from bayesian_network import HierarchicalBayesianNetwork
 from bayesian_node import BayesianNode, CategoricalNode
 from bayesian_network import BayesianNetwork
 from typing import Dict, Any, List, Tuple
-from insights import *
 
 def write_results_to_json(network, data: pd.DataFrame, results: Dict[str, Any], filename: str = None):
     if filename is None:

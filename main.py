@@ -10,12 +10,8 @@ from sklearn.impute import SimpleImputer
 from src.data_processing import prepare_data
 from src.modeling import BayesianModel
 from src.bayesian_network import BayesianNetwork
-from utils import (
-    write_results_to_json, write_summary_to_json, log_to_json, to_serializable,
-    map_age_to_category, process_age_gender, compute_vif, detect_outliers,
-    compute_sensitivity, compute_correlations, compute_partial_correlations,
-    perform_heteroscedasticity_test, compute_feature_importance
-)
+from utils import write_results_to_json, write_summary_to_json
+from archive.other.insights import *
 
 load_dotenv()
 
@@ -75,17 +71,8 @@ def main():
         categorical_columns=categorical_columns
     )
 
-    # Process age and gender
-    data = process_age_gender(data)
-
     # Perform data analysis
     results = {}
-    results['missing_values'] = data.isnull().sum().to_dict()
-    results['outliers'] = detect_outliers(data)
-    results['vif'] = compute_vif(data)
-    results['correlations'] = compute_correlations(data)
-    results['partial_correlations'] = compute_partial_correlations(data)
-    results['heteroscedasticity'] = perform_heteroscedasticity_test(data, 'CogFluidComp_Unadj')
 
     # Create and analyze Bayesian Network
     logger.info("Creating Bayesian Network")
@@ -102,7 +89,7 @@ def main():
     results['network_structure'] = model.network.explain_structure_extended()
     results['edge_probabilities'] = model.network.compute_edge_probabilities()
     results['key_relationships'] = model.network.get_key_relationships()
-    results['feature_importance'] = compute_feature_importance(model, data)
+    results['feature_importance'] = model.network.compute_feature_importance(model, data)
 
     # Simulate interventions
     logger.info("Simulating interventions")
@@ -118,7 +105,7 @@ def main():
 
     # Compute sensitivity
     logger.info("Computing sensitivity")
-    results['sensitivity'] = compute_sensitivity(model, data)
+    results['sensitivity'] = model.network.compute_sensitivity(model, data)
 
     # Write results to JSON
     logger.info("Writing results and summary to JSON")
@@ -126,6 +113,3 @@ def main():
     write_summary_to_json(model.network, results)
 
     logger.info("Analysis complete.")
-
-if __name__ == "__main__":
-    main()
