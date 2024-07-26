@@ -7,7 +7,6 @@ from scipy.stats import multinomial, norm, chi2_contingency
 class Inference:
     def __init__(self, nodes):
         self.nodes = nodes
-        print(f"Initialized Inference with {len(nodes)} nodes")
 
     def gibbs_sampling(self, num_samples: int, burn_in: int = 1000):
         samples = {node: np.zeros(num_samples + burn_in) for node in self.nodes}
@@ -35,7 +34,6 @@ class Inference:
         return {node: samples[node][burn_in:] for node in samples}
 
     def compute_sensitivity(self, target_node: str, num_samples: int = 1000) -> Dict[str, float]:
-        print(f"Computing sensitivity for {target_node}")
         samples = self.gibbs_sampling(num_samples)
         target_samples = samples[target_node]
         
@@ -47,7 +45,6 @@ class Inference:
                 else:
                     sensitivities[node] = np.corrcoef(target_samples, node_samples)[0, 1]
         
-        print(f"Computed sensitivities for {target_node}")
         return sensitivities
 
     def _compute_categorical_correlation(self, x, y):

@@ -4,6 +4,7 @@ from sklearn.impute import SimpleImputer
 from sklearn.preprocessing import StandardScaler
 from typing import List, Tuple, Dict
 from scipy import stats
+from scipy.stats import norm
 
 def optimize_data_types(df: pd.DataFrame) -> pd.DataFrame:
     """
@@ -36,13 +37,38 @@ def transform_skewed_features(data: pd.DataFrame, threshold: float = 0.5) -> pd.
             data[col] = np.log1p(data[col] - data[col].min())
     return data
 
-def cap_outliers(data: pd.DataFrame, columns: List[str], quantile: float = 0.8, cap_factor: float = 1.5) -> pd.DataFrame:
+def bayesian_outlier_treatment(data: pd.DataFrame, columns: List[str], credible_interval: float = 0.95) -> pd.DataFrame:
     for col in columns:
         if col in data.columns:
-            q = data[col].quantile(quantile)
-            cap_value = q * cap_factor
-            data[col] = data[col].clip(upper=cap_value)
+            # Remove non-finite values for fitting
+            col_data = data[col].dropna()
+            
+            if len(col_data) == 0:
+                print(f"Warning: Column {col} contains only non-finite values. Skipping.")
+                continue
+            
+            # Fit a normal distribution to the data
+            mu, std = norm.fit(col_data)
+            
+            # Calculate credible interval
+            lower, upper = norm.interval(credible_interval, loc=mu, scale=std)
+            
+            # Replace outliers with samples from the fitted distribution
+            mask = (data[col] < lower) | (data[col] > upper)
+            n_outliers = mask.sum()
+            
+            # Only replace finite outliers
+            finite_mask = mask & np.isfinite(data[col])
+            n_finite_outliers = finite_mask.sum()
+            
+            if n_finite_outliers > 0:
+                data.loc[finite_mask, col] = norm.rvs(loc=mu, scale=std, size=n_finite_outliers)
+            
+            if n_outliers != n_finite_outliers:
+                print(f"Warning: {n_outliers - n_finite_outliers} non-finite outliers in column {col} were not replaced.")
+    
     return data
+
 
 def preprocess_data(data: pd.DataFrame, categorical_columns: List[str], index: str = None) -> pd.DataFrame:
     data = data.copy()
@@ -60,7 +86,7 @@ def preprocess_data(data: pd.DataFrame, categorical_columns: List[str], index: s
     numeric_columns = data.select_dtypes(include=[np.number]).columns.tolist()
     numeric_columns = [col for col in numeric_columns if col not in categorical_columns]
 
-    data = cap_outliers(data, numeric_columns)
+    data = bayesian_outlier_treatment(data, numeric_columns)
     
     # Handle numeric columns
     numeric_imputer = SimpleImputer(strategy='median')
