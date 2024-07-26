@@ -110,7 +110,6 @@ class BayesianNetwork:
                 nodes[column] = CategoricalNode(name=column, categories=categories)
             else:
                 nodes[column] = BayesianNode(name=column)
-        print(f"Created {len(nodes)} nodes in total")
         return nodes
 
     def compute_node_influence(self, target_node_name: str) -> Dict[str, float]:

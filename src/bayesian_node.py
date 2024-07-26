@@ -211,7 +211,6 @@ class CategoricalNode(BayesianNode):
             counts = data.value_counts()
             self.distribution = (counts / counts.sum()).to_dict()
             self.fitted = True
-        print(f"Fitted CategoricalNode {self.name}")
 
     def set_distribution(self, dist):
         self.distribution = dist

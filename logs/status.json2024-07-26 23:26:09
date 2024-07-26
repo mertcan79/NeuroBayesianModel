@@ -1,0 +1,5 @@
+{"event": "changing types", "details": "Changing Age and Gender to categorical"}
+{"event": "fitting categorical node", "node": "Age"}
+{"event": "Age node distribution", "distribution": {"1": 0.4366576819407008, "2": 0.344115004492363, "0": 0.20754716981132076, "3": 0.011680143755615454}}
+{"event": "fitting continuous node", "node": "CogFluidComp_Unadj"}
+{"event": "CogFluidComp_Unadj node distribution", "distribution": {"intercept": 0.11603108668886497, "beta": 
