@@ -123,8 +123,6 @@ class BayesianNetwork:
         # Learn the structure of the Bayesian network
         self.edges = learn_structure(data, method=self.method, max_parents=self.max_parents, iterations=self.iterations, prior_edges=prior_edges)
         
-        print("Edges learned:", self.edges)  # Debug print
-        
         for parent, child in self.edges:
             if parent not in self.nodes or child not in self.nodes:
                 print(f"Warning: Edge {parent} -> {child} references non-existent node")
@@ -137,12 +135,6 @@ class BayesianNetwork:
                 parent_node.children.append(child_node)
             if parent_node not in child_node.parents:
                 child_node.parents.append(parent_node)
-
-        # Debug print
-        for node_name, node in self.nodes.items():
-            print(f"Node: {node_name}")
-            print(f"  Parents: {[p.name for p in node.parents]}")
-            print(f"  Children: {[c.name for c in node.children]}")
 
     def _initialize_parameters(self, data: pd.DataFrame, prior: Dict[str, Any] = None):
         if prior is None:

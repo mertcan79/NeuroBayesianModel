@@ -28,24 +28,18 @@ def select_features(behavioral: pd.DataFrame, hcp: pd.DataFrame,
     behavioral = behavioral[behavioral_features].copy()
     return behavioral, hcp
 
-def preprocess_data(data: pd.DataFrame, categorical_columns: List[str]) -> pd.DataFrame:
+def preprocess_data(data: pd.DataFrame, categorical_columns: List[str], index: str = None) -> pd.DataFrame:
     data = data.copy()
     
     # Set 'Subject' as index
-    if 'Subject' in data.columns:
-        data.set_index('Subject', inplace=True)
+    if index:
+        data.set_index(index, inplace=True)
     
-    # Handle 'Age' column if it exists and is in categorical_columns
-    if 'Age' in data.columns and 'Age' in categorical_columns:
-        data['Age'] = pd.Categorical(data['Age']).codes
+    # Encode categorical columns
+    for col in categorical_columns:
+        if col in data.columns:
+            data[col] = pd.Categorical(data[col]).codes
     
-    # Handle 'Gender' column if it exists and is in categorical_columns
-    if 'Gender' in data.columns and 'Gender' in categorical_columns:
-        data['Gender'] = pd.Categorical(data['Gender']).codes
-
-    if 'MMSE_Score' in data.columns and 'MMSE_Score' in categorical_columns:
-        data['MMSE_Score'] = pd.Categorical(data['MMSE_Score']).codes
-
     # Identify numeric columns
     numeric_columns = data.select_dtypes(include=[np.number]).columns.tolist()
     numeric_columns = [col for col in numeric_columns if col not in categorical_columns]
@@ -68,7 +62,7 @@ def preprocess_data(data: pd.DataFrame, categorical_columns: List[str]) -> pd.Da
 
 def prepare_data(behavioral_path: str, hcp_path: str,
                   behavioral_features: List[str], hcp_features: List[str],
-                  categorical_columns: List[str]) -> Tuple[pd.DataFrame, List[str], Dict[str, List]]:
+                  categorical_columns: List[str], index: str) -> Tuple[pd.DataFrame, List[str], Dict[str, List]]:
     behavioral, hcp = load_data(behavioral_path, hcp_path)
     
     behavioral = optimize_data_types(behavioral)
@@ -78,7 +72,7 @@ def prepare_data(behavioral_path: str, hcp_path: str,
     
     data = pd.merge(hcp, behavioral, on="Subject")
     
-    processed_data = preprocess_data(data, categorical_columns)
+    processed_data = preprocess_data(data, categorical_columns, index)
     
     # Get categories for categorical variables
     categories = {}

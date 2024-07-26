@@ -118,6 +118,7 @@ def neurological_structure_learning(data, prior_edges, max_parents=4, alpha=0.05
         return bic
     
     for node in nodes:
+        
         potential_parents = [n for n in nodes if n != node]
         current_parents = [p for p, c in prior_edges if c == node]
         
@@ -128,11 +129,14 @@ def neurological_structure_learning(data, prior_edges, max_parents=4, alpha=0.05
             for parent in potential_parents:
                 if parent not in current_parents:
                     new_parents = current_parents + [parent]
-                    bic = compute_bic(node, new_parents)
-                    
-                    if bic < best_bic:
-                        best_parent = parent
-                        best_bic = bic
+                    try:
+                        bic = compute_bic(node, new_parents)
+                        
+                        if bic < best_bic:
+                            best_parent = parent
+                            best_bic = bic
+                    except Exception as e:
+                        print(f"Error computing BIC for {node} with parents {new_parents}: {e}")
             
             if best_parent is None or len(current_parents) >= max_parents:
                 break
