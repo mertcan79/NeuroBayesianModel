@@ -152,7 +152,7 @@ class BayesianNode:
             X = sm.add_constant(parent_data)
             model = sm.OLS(node_data, X).fit()
             self.distribution = {
-                'intercept': model.params[0],
+                'intercept': model.params.iloc[0],
                 'beta': model.params[1:],
                 'std': model.resid.std()
             }

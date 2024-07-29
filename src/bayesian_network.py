@@ -12,7 +12,7 @@ from scipy.stats import chi2_contingency
 from scipy import stats
 
 from bayesian_node import BayesianNode, CategoricalNode, Node
-from structure_learning import learn_structure
+from structure_learning import neurological_structure_learning
 from parameter_fitting import fit_parameters
 from inference import Inference
 
@@ -51,6 +51,8 @@ class BayesianNetwork:
     def add_node(self, node: 'BayesianNode'):
         self.nodes[node.name] = node
 
+    def get_edges(self):
+        return self.edges
 
     def remove_edge(self, parent, child):
         self.edges.remove((parent, child))
@@ -79,17 +81,50 @@ class BayesianNetwork:
             print(f"Error sampling from node {node_name}: {str(e)}")
             return None
 
-    def _learn_structure(self, data: pd.DataFrame, prior_edges=None):
-
-        learned_edges = learn_structure(data, method=self.method, max_parents=self.max_parents, 
-                                        iterations=self.iterations, prior_edges=prior_edges)
+    def _learn_structure(self, data: pd.DataFrame, prior_edges: Optional[List[Tuple[str, str]]] = None):
+        """Learn the structure of the Bayesian network."""
+        learned_edges = neurological_structure_learning(
+            data=data, 
+            max_parents=self.max_parents, 
+            iterations=self.iterations, 
+            prior_edges=prior_edges
+        )
         
-        self.edges = []  # Clear existing edges
-        for parent, child in learned_edges:
-            if parent in self.nodes and child in self.nodes:
-                self.add_edge(parent, child)
-            else:
-                print(f"Warning: Edge {parent} -> {child} references non-existent node")
+        # Check if learned_edges is None or empty
+        if not learned_edges:
+            logger.warning("No edges were learned. The network will have no connections.")
+            return
+
+        # Check the format of learned_edges
+        if not isinstance(learned_edges, (list, tuple)):
+            raise ValueError(f"Expected learned_edges to be a list or tuple, but got {type(learned_edges)}")
+
+        valid_edges = []
+        for i, edge in enumerate(learned_edges):
+            if not isinstance(edge, (list, tuple)) or len(edge) != 2:
+                logger.warning(f"Skipping invalid edge at index {i}: {edge}")
+                continue
+            
+            parent, child = edge
+            if not isinstance(parent, str) or not isinstance(child, str):
+                logger.warning(f"Skipping edge with non-string nodes at index {i}: {edge}")
+                continue
+            
+            if parent not in self.nodes or child not in self.nodes:
+                logger.warning(f"Skipping edge with unknown nodes at index {i}: {edge}")
+                continue
+            
+            valid_edges.append((parent, child))
+        
+        if not valid_edges:
+            logger.warning("No valid edges were found. The network will have no connections.")
+            return
+
+        # Add the valid edges to the network
+        for parent, child in valid_edges:
+            self.add_edge(parent, child)
+
+        logger.info(f"Added {len(valid_edges)} edges to the network.")
 
     def add_edge(self, parent_name: str, child_name: str):
         if parent_name not in self.nodes or child_name not in self.nodes:
@@ -144,6 +179,18 @@ class BayesianNetwork:
 
         return edge_probability
 
+    def compute_all_edge_probabilities(self):
+        edge_probabilities = {}
+        for parent in self.nodes:
+            for child in self.nodes:
+                if parent != child:  # Avoid self-loops
+                    try:
+                        probability = self.compute_edge_probability(parent, child)
+                        edge_probabilities[f"{parent}->{child}"] = probability
+                    except ValueError:
+                        continue  # Skip edges that do not exist
+        return edge_probabilities
+
     def get_clinical_implications(self) -> Dict[str, Any]:
         implications = {}
         for node_name, node in self.nodes.items():
@@ -159,22 +206,6 @@ class BayesianNetwork:
                 }
         return implications
 
-    def _learn_structure(self, data: pd.DataFrame, prior_edges=None):
-        learned_edges = learn_structure(data, method=self.method, max_parents=self.max_parents, 
-                                        iterations=self.iterations, prior_edges=prior_edges)
-
-        
-        if not learned_edges:
-            print("Warning: No edges learned. Check your structure learning method and data.")
-            return
-        
-        self.edges = []  # Clear existing edges
-        for parent, child in learned_edges:
-            if parent in self.nodes and child in self.nodes:
-                self.add_edge(parent, child)
-            else:
-                print(f"Warning: Edge {parent} -> {child} references non-existent node")
-        
 
     def _initialize_parameters(self, data: pd.DataFrame, prior: Dict[str, Any] = None):
         if prior is None:
@@ -303,68 +334,92 @@ class BayesianNetwork:
             data[col] = data[col].astype('category')
         return data
 
-def explain_structure_extended(self):
-    if not hasattr(self, 'graph') or not self.graph:
-        return "The network structure has not been learned yet."
-    G = nx.DiGraph(self.graph)
-    
-    summary = []
-    
-    # Identify hub nodes (nodes with high degree)
-    degrees = dict(G.degree())
-    hub_threshold = np.percentile(list(degrees.values()), 80)  # Top 20% as hubs
-    hubs = [node for node, degree in degrees.items() if degree > hub_threshold]
-    
-    summary.append(f"Key hub variables: {', '.join(hubs)}")
-    
-    # Identify strongly connected components
-    components = list(nx.strongly_connected_components(G))
-    if len(components) > 1:
-        summary.append(f"The network has {len(components)} strongly connected components.")
-    
-    # Identify potential causal pathways
-    cognitive_vars = ['CogFluidComp_Unadj', 'MMSE_Score']  # Example cognitive variables
-    brain_vars = ['FS_L_Hippo_Vol', 'FS_R_Hippo_Vol', 'FS_Tot_WM_Vol']  # Example brain structure variables
-    
-    for cog_var in cognitive_vars:
-        for brain_var in brain_vars:
-            paths = list(nx.all_simple_paths(G, brain_var, cog_var))
-            if paths:
-                summary.append(f"Potential pathway from {brain_var} to {cog_var}: {' -> '.join(paths[0])}")
-    
-    # Identify feedback loops
-    cycles = list(nx.simple_cycles(G))
-    if cycles:
-        summary.append(f"The network contains {len(cycles)} feedback loops.")
-        if len(cycles) <= 3:  # Only show a few examples
-            summary.append(f"Example loop: {' -> '.join(cycles[0] + [cycles[0][0]])}")
-    
-    # Analyze edge strengths using Cramer's V for categorical variables
-    edge_strengths = {}
-    for parent, child in G.edges():
-        if parent in self.categorical_columns or child in self.categorical_columns:
-            cramer_v = self._compute_categorical_edge_strength(parent, child)
-            edge_strengths[(parent, child)] = cramer_v
-        else:
-            correlation = self._compute_continuous_edge_strength(parent, child)
-            edge_strengths[(parent, child)] = abs(correlation)
-    
-    # Report strongest relationships
-    strongest_edges = sorted(edge_strengths.items(), key=lambda x: x[1], reverse=True)[:5]
-    summary.append("Strongest relationships in the network:")
-    for (parent, child), strength in strongest_edges:
-        summary.append(f"  {parent} -> {child}: strength = {strength:.2f}")
-    
-    return "\n".join(summary)
+    def explain_structure_extended(self):
+        if not hasattr(self, 'graph') or not self.graph:
+            return "The network structure has not been learned yet."
+        G = nx.DiGraph(self.graph)
+        
+        summary = []
+        
+        # Identify hub nodes (nodes with high degree)
+        degrees = dict(G.degree())
+        hub_threshold = np.percentile(list(degrees.values()), 80)  # Top 20% as hubs
+        hubs = [node for node, degree in degrees.items() if degree > hub_threshold]
+        
+        summary.append(f"Key hub variables: {', '.join(hubs)}")
+        
+        # Identify strongly connected components
+        components = list(nx.strongly_connected_components(G))
+        if len(components) > 1:
+            summary.append(f"The network has {len(components)} strongly connected components.")
+        
+        # Identify potential causal pathways
+        cognitive_vars = ['CogFluidComp_Unadj', 'MMSE_Score']  # Example cognitive variables
+        brain_vars = ['FS_L_Hippo_Vol', 'FS_R_Hippo_Vol', 'FS_Tot_WM_Vol']  # Example brain structure variables
+        
+        for cog_var in cognitive_vars:
+            for brain_var in brain_vars:
+                paths = list(nx.all_simple_paths(G, brain_var, cog_var))
+                if paths:
+                    summary.append(f"Potential pathway from {brain_var} to {cog_var}: {' -> '.join(paths[0])}")
+        
+        # Identify feedback loops
+        cycles = list(nx.simple_cycles(G))
+        if cycles:
+            summary.append(f"The network contains {len(cycles)} feedback loops.")
+            if len(cycles) <= 3:  # Only show a few examples
+                summary.append(f"Example loop: {' -> '.join(cycles[0] + [cycles[0][0]])}")
+        
+        # Analyze edge strengths using Cramer's V for categorical variables
+        edge_strengths = {}
+        for parent, child in G.edges():
+            if parent in self.categorical_columns or child in self.categorical_columns:
+                cramer_v = self._compute_categorical_edge_strength(parent, child)
+                edge_strengths[(parent, child)] = cramer_v
+            else:
+                correlation = self._compute_continuous_edge_strength(parent, child)
+                edge_strengths[(parent, child)] = abs(correlation)
+        
+        # Report strongest relationships
+        strongest_edges = sorted(edge_strengths.items(), key=lambda x: x[1], reverse=True)[:5]
+        summary.append("Strongest relationships in the network:")
+        for (parent, child), strength in strongest_edges:
+            summary.append(f"  {parent} -> {child}: strength = {strength:.2f}")
+        
+        return "\n".join(summary)
 
-def _compute_categorical_edge_strength(self, parent, child):
-    contingency_table = pd.crosstab(self.data[parent], self.data[child])
-    chi2, _, _, _ = stats.chi2_contingency(contingency_table)
-    n = self.data.shape[0]
-    min_dim = min(contingency_table.shape) - 1
-    cramer_v = np.sqrt(chi2 / (n * min_dim))
-    return cramer_v
+    def _compute_categorical_edge_strength(self, parent, child):
+        contingency_table = pd.crosstab(self.data[parent], self.data[child])
+        chi2, _, _, _ = stats.chi2_contingency(contingency_table)
+        n = self.data.shape[0]
+        min_dim = min(contingency_table.shape) - 1
+        cramer_v = np.sqrt(chi2 / (n * min_dim))
+        return cramer_v
 
-def _compute_continuous_edge_strength(self, parent, child):
-    correlation, _ = stats.pearsonr(self.data[parent], self.data[child])
-    return correlation
+    def _compute_continuous_edge_strength(self, parent, child):
+        correlation, _ = stats.pearsonr(self.data[parent], self.data[child])
+        return correlation
+
+    def get_key_relationships(self):
+        key_relationships = {}
+        for (parent, child), probability in self.compute_all_edge_probabilities().items():
+            if probability > 0.5:  # Example threshold for "key" relationships
+                key_relationships[(parent, child)] = probability
+        return key_relationships
+
+    def compute_sensitivity(self, target_variable: str):
+        if target_variable not in self.nodes:
+            raise ValueError(f"Target variable {target_variable} not found in the network.")
+        
+        sensitivities = {}
+        for node_name in self.nodes:
+            if node_name != target_variable:
+                # Compute sensitivity based on mutual information
+                mutual_info = self.compute_mutual_information(node_name, target_variable)
+                sensitivities[node_name] = mutual_info
+        
+        return sensitivities
+
+    def compute_mutual_information(self, node1: str, node2: str):
+        from sklearn.metrics import mutual_info_score
+        return mutual_info_score(self.data[node1], self.data[node2])

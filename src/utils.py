@@ -6,7 +6,6 @@ import pandas as pd
 from typing import Dict, Any, List, Tuple
 from statsmodels.stats.outliers_influence import variance_inflation_factor
 from statsmodels.stats.diagnostic import het_breuschpagan
-from sklearn.feature_selection import mutual_info_regression
 from scipy import stats
 
 
@@ -36,10 +35,13 @@ def write_results_to_json(network, data: pd.DataFrame, params: Dict[str, Any], f
     file_path = os.path.join(log_folder, filename)
 
     results = {}
+
+    results["edge_probabilities"] = network.compute_all_edge_probabilities()
+
     results["network_structure"] = network.explain_structure_extended()
-    results["edge_probabilities"] = network.compute_edge_probabilities()
+    results["edge_probabilities"] = network.compute_all_edge_probabilities()
     results["key_relationships"] = network.get_key_relationships()
-    results["feature_importance"] = compute_feature_importance(network, data)
+    results["feature_importance"] = compute_feature_importance(data, params["target_variable"])
     results["unexpected_insights"] = get_unexpected_insights(network, params["target_variable"])
     results["actionable_insights"] = generate_actionable_insights(network, params["target_variable"], params["feature_thresholds"])
     results["personality_cognition_relationships"] = analyze_personality_cognition_relationship(data, params["personality_traits"], params["cognitive_measures"])
@@ -62,7 +64,7 @@ def write_results_to_json(network, data: pd.DataFrame, params: Dict[str, Any], f
     except Exception as e:
         print(f"Error writing results to file: {str(e)}")
 
-def write_summary_to_json(network, results: Dict[str, Any], filename: str = None):
+def write_summary_to_json(network, params: Dict[str, Any], filename: str = None):
     if filename is None:
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         filename = f"bayesian_network_summary_{timestamp}.json"
@@ -75,14 +77,14 @@ def write_summary_to_json(network, results: Dict[str, Any], filename: str = None
 
     summary = {
         "network_structure": network.explain_structure_extended(),
-        "mean_log_likelihood": results.get("mean_log_likelihood"),
-        "std_log_likelihood": results.get("std_log_likelihood"),
-        "sensitivity": results.get("sensitivity"),
+        #"mean_log_likelihood": results.get("mean_log_likelihood"),
+        #"std_log_likelihood": results.get("std_log_likelihood"),
+        #"sensitivity": results.get("sensitivity"),
         "num_nodes": len(network.nodes),
         "num_edges": len(network.get_edges()),
         "categorical_variables": network.categorical_columns,
         "continuous_variables": [node for node in network.nodes if node not in network.categorical_columns],
-        "key_findings": summarize_key_findings(network),
+        "key_findings": summarize_key_findings(network, params["target_variable"]),
         "future_research_directions": network.suggest_future_research(),
         "key_personality_cognition_findings": summarize_personality_cognition(results.get("personality_cognition_relationships")),
         "significant_age_dependent_changes": summarize_age_dependent_changes(results.get("age_dependent_relationships")),
@@ -122,9 +124,11 @@ def perform_heteroscedasticity_test(data: pd.DataFrame, target: str) -> Dict[str
     _, pvalue, _, _ = het_breuschpagan(y, X)
     return {"p_value": pvalue}
 
-def compute_feature_importance(model, data: pd.DataFrame) -> Dict[str, float]:
-    X = data.drop(columns=[model.target])
-    y = data[model.target]
+def compute_feature_importance(data: pd.DataFrame, target_variable: str) -> Dict[str, float]:
+    from sklearn.feature_selection import mutual_info_regression
+    
+    X = data.drop(columns=[target_variable])
+    y = data[target_variable]
     mi_scores = mutual_info_regression(X, y)
     return dict(zip(X.columns, mi_scores))
 
@@ -279,9 +283,10 @@ def get_clinical_insights(network, target_variable, feature_categories):
                 insights[-1] += f"This highlights the importance of {top_feature} in overall cognitive function."
     
     # Analyze interactions
-    edge_probabilities = network.compute_edge_probabilities()
-    strongest_edge = max(edge_probabilities.items(), key=lambda x: x[1]['probability'])
-    insights.append(f"The strongest relationship in the network is between {strongest_edge[0][0]} and {strongest_edge[0][1]} (probability: {strongest_edge[1]['probability']:.2f}). {strongest_edge[1]['interpretation']}")
+    edge_probabilities = network.compute_all_edge_probabilities()
+    if edge_probabilities:
+        strongest_edge = max(edge_probabilities.items(), key=lambda x: x[1])
+        insights.append(f"The strongest relationship in the network is between {strongest_edge[0][0]} and {strongest_edge[0][1]} (probability: {strongest_edge[1]:.2f}).")
     
     return insights
 
@@ -322,15 +327,14 @@ def get_gender_specific_insights(data: pd.DataFrame, gender_column: str, target_
     return insights
 
 def summarize_key_findings(network, target_variable: str, top_n: int = 5) -> str:
-    summary = []
     sensitivity = network.compute_sensitivity(target_variable)
     top_features = sorted(sensitivity.items(), key=lambda x: abs(x[1]), reverse=True)[:top_n]
     
-    summary.append(f"Top {top_n} influential features for {target_variable}:")
+    summary = f"Top {top_n} influential features for {target_variable}:\n"
     for feature, value in top_features:
-        summary.append(f"- {feature}: {value:.2f}")
+        summary += f"- {feature}: {value:.2f}\n"
     
-    return "\n".join(summary)
+    return summary
 
 def perform_interaction_effects_analysis(data: pd.DataFrame, target: str):
     interactions = {}

@@ -1,3 +1,6 @@
+import warnings
+warnings.filterwarnings("ignore", category=UserWarning)
+
 import logging
 from logging_config import setup_logging  # Assuming logging_config.py is in the root
 import os
@@ -7,6 +10,7 @@ import numpy as np
 from src.data_processing import prepare_data
 from src.modeling import BayesianModel
 from src.utils import write_results_to_json, write_summary_to_json  # Adjusted import path
+
 
 load_dotenv()
 
@@ -50,7 +54,7 @@ def preprocess_hcp():
 def main():
     try:
         preprocess_hcp()
-
+        logger.info("Starting Bayesian Network analysis")
         behavioral_features = [
             'Subject', 'Age', 'Gender', 'CogFluidComp_Unadj', 'MMSE_Score',
             'NEOFAC_O', 'NEOFAC_C', 'ProcSpeed_Unadj', 'CardSort_Unadj', 'PicVocab_Unadj', 'ReadEng_Unadj'
@@ -89,6 +93,10 @@ def main():
         model = BayesianModel(method='nsl', max_parents=6, iterations=1500, categorical_columns=categorical_columns)
         model.fit(data, prior_edges=prior_edges)
 
+        logger.info("Model fitted successfully")
+        logger.info(f"Network nodes: {model.network.nodes}")
+        logger.info(f"Network edges: {model.network.edges}")
+
         analysis_params = {
             "target_variable": "CogFluidComp_Unadj",
             "personality_traits": ["NEOFAC_O", "NEOFAC_C"],
@@ -101,12 +109,18 @@ def main():
             "feature_thresholds": {"NEOFAC_O": 0.1, "FS_L_Hippo_Vol": 0.1}
         }
 
-        write_results_to_json(model.network, data, analysis_params)
-        write_summary_to_json(model.network, analysis_params)
+        try:
+            write_results_to_json(network=model.network, data=data, params=analysis_params)
+            write_summary_to_json(network=model.network, results=results, params=analysis_params)
+        except Exception as e:
+            logger.error(f"Error in writing to json: {str(e)}")
+            raise
 
         logger.info("Analysis complete.")
+
     except Exception as e:
         logger.error(f"An error occurred: {str(e)}")
+        logger.exception("Exception details:")
 
 if __name__ == "__main__":
     main()

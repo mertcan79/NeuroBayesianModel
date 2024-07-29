@@ -3,6 +3,10 @@ import pandas as pd
 from typing import Dict, Any, List
 from bayesian_node import BayesianNode, CategoricalNode
 from scipy.stats import multinomial, norm, chi2_contingency
+import logging
+
+logging.basicConfig(level=logging.ERROR)
+logger = logging.getLogger(__name__)
 
 class Inference:
     def __init__(self, nodes):
@@ -34,18 +38,21 @@ class Inference:
         return {node: samples[node][burn_in:] for node in samples}
 
     def compute_sensitivity(self, target_node: str, num_samples: int = 1000) -> Dict[str, float]:
-        samples = self.gibbs_sampling(num_samples)
-        target_samples = samples[target_node]
-        
-        sensitivities = {}
-        for node, node_samples in samples.items():
-            if node != target_node:
-                if isinstance(self.nodes[node], CategoricalNode) or isinstance(self.nodes[target_node], CategoricalNode):
-                    sensitivities[node] = self._compute_categorical_correlation(target_samples, node_samples)
-                else:
-                    sensitivities[node] = np.corrcoef(target_samples, node_samples)[0, 1]
-        
-        return sensitivities
+        try:
+            samples = self.gibbs_sampling(num_samples)
+            target_samples = samples[target_node]
+            sensitivities = {}
+            for node, node_samples in samples.items():
+                if node != target_node:
+                    if isinstance(self.nodes[node], CategoricalNode) or isinstance(self.nodes[target_node], CategoricalNode):
+                        sensitivities[node] = self._compute_categorical_correlation(target_samples, node_samples)
+                    else:
+                        sensitivities[node] = np.corrcoef(target_samples, node_samples)[0, 1]
+            return sensitivities
+        except Exception as e:
+            logger.error(f"Error in Inference.compute_sensitivity: {str(e)}")
+            logger.exception("Exception details:")
+            raise
 
     def _compute_categorical_correlation(self, x, y):
         contingency = pd.crosstab(x, y)

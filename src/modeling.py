@@ -38,7 +38,14 @@ class BayesianModel:
 
     def compute_sensitivity(self, target_node: str, num_samples: int = 1000) -> Dict[str, float]:
         """Compute sensitivity of the target node to changes in other nodes."""
-        return self.network.compute_sensitivity(target_node, num_samples)
+        try:
+            result = self.network.inference.compute_sensitivity(target_node, num_samples)
+            if not isinstance(result, dict):
+                raise ValueError("The result should be a dictionary")
+            return result
+        except Exception as e:
+            print(f"Error in compute_sensitivity: {e}")
+            raise
 
     def analyze_network(self):
         analysis = {}
