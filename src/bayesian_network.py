@@ -238,7 +238,8 @@ class BayesianNetwork:
                     model = sm.OLS(y, X).fit()
                     self.parameters[node_name] = {
                         'coefficients': model.params.values,
-                        'std': model.resid.std()
+                        'std': model.resid.std(),
+                        'mean': y.mean()  # Add this line to ensure 'mean' is always present
                     }
                     node.distribution = norm(loc=0, scale=self.parameters[node_name]['std'])
 
@@ -279,7 +280,7 @@ class BayesianNetwork:
                     'std': std
                 }
 
-    def _compute_log_likelihood(self, data: pd.DataFrame) -> float:
+    def compute_log_likelihood(self, data: pd.DataFrame) -> float:
         log_likelihood = 0
         for node in self.nodes:
             parents = self.get_parents(node)
@@ -287,11 +288,17 @@ class BayesianNetwork:
             if parents:
                 parent_data = data[parents]
                 mean = self._predict_mean(node, parent_data)
-                std = self.parameters[node]['std']
+                std = self.parameters[node].get('std', 1.0)  # Default to 1.0 if 'std' is not present
             else:
+                if 'mean' not in self.parameters[node]:
+                    # If 'mean' is not present, use the empirical mean of the data
+                    self.parameters[node]['mean'] = np.mean(node_data)
                 mean = self.parameters[node]['mean']
-                std = self.parameters[node]['std']
-            log_likelihood += norm.logpdf(node_data, loc=mean, scale=std).sum()
+                std = self.parameters[node].get('std', np.std(node_data))  # Use empirical std if not present
+            
+            # Add a small constant to avoid log(0)
+            epsilon = 1e-10
+            log_likelihood += np.sum(norm.logpdf(node_data, loc=mean, scale=std + epsilon))
         return log_likelihood
 
     def _predict_mean(self, node: str, parent_data: pd.DataFrame) -> np.ndarray:

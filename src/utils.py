@@ -32,7 +32,7 @@ def calculate_results(network, data: pd.DataFrame, params: Dict[str, Any]) -> Di
     results["edge_probabilities"] = network.compute_all_edge_probabilities()
     results["key_relationships"] = network.get_key_relationships()
     results["feature_importance"] = compute_feature_importance(data, params["target_variable"])
-    results["unexpected_insights"] = get_unexpected_insights(network, params["target_variable"])
+    results["unexpected_insights"] = get_unexpected_insights(network, params["target_variable"], params["analysis_variables"])
     results["actionable_insights"] = generate_actionable_insights(network, params["target_variable"], params["feature_thresholds"])
     results["personality_cognition_relationships"] = analyze_personality_cognition_relationship(data, params["personality_traits"], params["cognitive_measures"])
     results["age_dependent_relationships"] = analyze_age_dependent_relationships(data, params["age_column"], params["target_variable"])
@@ -46,8 +46,8 @@ def calculate_results(network, data: pd.DataFrame, params: Dict[str, Any]) -> Di
     results["key_findings_summary"] = summarize_key_findings(network, params["target_variable"])
     results["network_structure"] = network.explain_structure_extended()
     results["summarize_personality_cognition"] = summarize_personality_cognition(results["personality_cognition_relationships"])
-    results["mean_log_likelihood"] = get_mean_log_likelihood()
-    results["std_log_likelihood"] = get_std_log_likelihood()
+    results["mean_log_likelihood"] = get_mean_log_likelihood(network, data)
+    results["std_log_likelihood"] = get_std_log_likelihood(network, data)
 
     return results
 
@@ -74,11 +74,11 @@ def write_results_to_json(results: Dict, filename: str = None):
 # Utility functions
 
 def get_mean_log_likelihood(network, data):
-    log_likelihoods = [network.log_likelihood(sample) for _, sample in data.iterrows()]
+    log_likelihoods = [network.compute_log_likelihood(sample) for _, sample in data.iterrows()]
     return np.mean(log_likelihoods)
 
 def get_std_log_likelihood(network, data):
-    log_likelihoods = [network.log_likelihood(sample) for _, sample in data.iterrows()]
+    log_likelihoods = [network.compute_log_likelihood(sample) for _, sample in data.iterrows()]
     return np.std(log_likelihoods)
 
 def compute_vif(data: pd.DataFrame) -> Dict[str, float]:
@@ -369,9 +369,16 @@ def summarize_personality_cognition(personality_cognition_relationships):
         return "No personality-cognition relationships found."
     
     summary = []
-    for trait, measures in personality_cognition_relationships.items():
-        strongest_measure = max(measures.items(), key=lambda x: abs(x[1]['correlation']))
-        summary.append(f"{trait} shows strongest relationship with {strongest_measure[0]} (r={strongest_measure[1]['correlation']:.2f}, p={strongest_measure[1]['p_value']:.4f})")
+    relationships = personality_cognition_relationships.get("relationships", {})
+    for relationship, details in relationships.items():
+        trait, measure = relationship.split('-')
+        correlation = details['correlation']
+        p_value = details['p_value']
+        summary.append(f"{trait} shows relationship with {measure} (r={correlation:.2f}, p={p_value:.4f})")
+    
+    if summary:
+        strongest_relationship = max(relationships.items(), key=lambda x: abs(x[1]['correlation']))
+        summary.append(f"\nStrongest relationship: {strongest_relationship[0]} (r={strongest_relationship[1]['correlation']:.2f}, p={strongest_relationship[1]['p_value']:.4f})")
     
     return "\n".join(summary)
 
