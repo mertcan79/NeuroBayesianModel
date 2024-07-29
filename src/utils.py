@@ -24,7 +24,7 @@ def make_serializable(obj):
     else:
         return obj
 
-def write_results_to_json(network, data: pd.DataFrame, results: Dict[str, Any], filename: str = None):
+def write_results_to_json(network, data: pd.DataFrame, params: Dict[str, Any], filename: str = None):
     if filename is None:
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         filename = f"results_{timestamp}.json"
@@ -35,45 +35,23 @@ def write_results_to_json(network, data: pd.DataFrame, results: Dict[str, Any], 
     
     file_path = os.path.join(log_folder, filename)
 
-    # Add all analysis results
+    results = {}
     results["network_structure"] = network.explain_structure_extended()
-    edge_probabilities = network.compute_edge_probabilities()
-    results["edge_probabilities"] = {
-        f"{parent} -> {child}": {
-            "probability": f"{prob['probability']:.2f}",
-            "strength": prob['strength'],
-            "interpretation": prob['interpretation']
-        }
-        for (parent, child), prob in edge_probabilities.items()
-    }
+    results["edge_probabilities"] = network.compute_edge_probabilities()
     results["key_relationships"] = network.get_key_relationships()
     results["feature_importance"] = compute_feature_importance(network, data)
-    results["unexpected_insights"] = get_unexpected_insights(network)
-    results["actionable_insights"] = generate_actionable_insights(network)
-    results["personality_cognition_relationships"] = analyze_personality_cognition_relationship(data)
-    results["age_dependent_relationships"] = analyze_age_dependent_relationships(data)
-    results["practical_implications"] = get_practical_implications(network)
-    results["age_stratified_analysis"] = perform_age_stratified_analysis(data)
-    results["unexpected_findings_explanations"] = explain_unexpected_findings(network)
-    results["brain_stem_relationships"] = analyze_brain_stem_relationship(data)
-    results["clinical_insights"] = get_clinical_insights(network)
-    results["age_specific_insights"] = get_age_specific_insights(data)
-    results["gender_specific_insights"] = get_gender_specific_insights(data)
-    results["key_findings_summary"] = summarize_key_findings(network)
-    results["marginal_likelihoods"] = network.compute_marginal_likelihoods()
-    results["influential_nodes"] = network.identify_influential_nodes()
-    results["mutual_information"] = network.compute_mutual_information()
-    results["node_influence"] = network.compute_node_influence()
-    results["pairwise_mutual_information"] = network.compute_pairwise_mutual_information()
-    results["interaction_effects"] = perform_interaction_effects_analysis(data, network.target)
-    results["counterfactual_analysis"] = perform_counterfactual_analysis(network, data, {'NEOFAC_O': 5})
-    results["mediation_analysis"] = perform_mediation_analysis(data, 'NEOFAC_O', 'ProcSpeed_Unadj', 'CogFluidComp_Unadj')
-    results["sensitivity_analysis"] = perform_sensitivity_analysis(network, data, network.target)
-    results["vif"] = compute_vif(data)
-    results["outliers"] = detect_outliers(data)
-    results["correlations"] = compute_correlations(data)
-    results["partial_correlations"] = compute_partial_correlations(data)
-    results["heteroscedasticity"] = perform_heteroscedasticity_test(data, network.target)
+    results["unexpected_insights"] = get_unexpected_insights(network, params["target_variable"])
+    results["actionable_insights"] = generate_actionable_insights(network, params["target_variable"], params["feature_thresholds"])
+    results["personality_cognition_relationships"] = analyze_personality_cognition_relationship(data, params["personality_traits"], params["cognitive_measures"])
+    results["age_dependent_relationships"] = analyze_age_dependent_relationships(data, params["age_column"], params["target_variable"])
+    results["practical_implications"] = get_practical_implications(network, params["target_variable"], params["feature_thresholds"])
+    results["age_stratified_analysis"] = perform_age_stratified_analysis(data, params["age_column"], params["target_variable"], params["age_groups"])
+    results["unexpected_findings_explanations"] = explain_unexpected_findings(network, params["target_variable"], params["brain_stem_column"], "FS_L_Amygdala_Vol", "FS_R_Amygdala_Vol")
+    results["brain_stem_relationships"] = analyze_brain_stem_relationship(data, params["brain_stem_column"], params["cognitive_measures"])
+    results["clinical_insights"] = get_clinical_insights(network, params["target_variable"], {"Brain Structure": params["brain_structure_features"], "Personality": params["personality_traits"]})
+    results["age_specific_insights"] = get_age_specific_insights(data, params["age_column"], params["target_variable"])
+    results["gender_specific_insights"] = get_gender_specific_insights(data, params["gender_column"], params["target_variable"])
+    results["key_findings_summary"] = summarize_key_findings(network, params["target_variable"])
 
     serializable_results = make_serializable(results)
     

@@ -92,7 +92,7 @@ def preprocess_data(data: pd.DataFrame, categorical_columns: List[str], index: s
     numeric_imputer = SimpleImputer(strategy='median')
     for col in data.columns:
         if data[col].isnull().sum() > 0:
-            data[col].fillna(data[col].mean(), inplace=True)
+            data[col] = data[col].fillna(data[col].mean())
     data[numeric_columns] = numeric_imputer.fit_transform(data[numeric_columns])
     
     # Handle categorical columns

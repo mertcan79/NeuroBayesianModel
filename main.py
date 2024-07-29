@@ -1,13 +1,11 @@
 import logging
 from logging_config import setup_logging  # Assuming logging_config.py is in the root
 import os
-import sys
 from dotenv import load_dotenv
 import pandas as pd
 import numpy as np
 from src.data_processing import prepare_data
 from src.modeling import BayesianModel
-from src.bayesian_network import BayesianNetwork
 from src.utils import write_results_to_json, write_summary_to_json  # Adjusted import path
 
 load_dotenv()
@@ -58,15 +56,14 @@ def preprocess_hcp():
 def main():
     try:
         preprocess_hcp()
-        logger.info("Starting Bayesian Network analysis")
 
         behavioral_features = [
-            'Subject', 'Age', 'Gender', 'CogFluidComp_Unadj', 'CogCrystalComp_Unadj', 'MMSE_Score',
+            'Subject', 'Age', 'Gender', 'CogFluidComp_Unadj', 'MMSE_Score',
             'NEOFAC_O', 'NEOFAC_C', 'ProcSpeed_Unadj', 'CardSort_Unadj', 'PicVocab_Unadj', 'ReadEng_Unadj'
         ]
 
         hcp_features = [
-            'Subject', 'FS_TotCort_GM_Vol', 'FS_SubCort_GM_Vol', 'FS_Total_GM_Vol', 'FS_Tot_WM_Vol', 'FS_BrainStem_Vol',
+            'Subject', 'FS_SubCort_GM_Vol', 'FS_Tot_WM_Vol', 'FS_BrainStem_Vol',
             'FS_L_Hippo_Vol', 'FS_R_Hippo_Vol', 'FS_L_Amygdala_Vol', 'FS_R_Amygdala_Vol',
             'FS_L_Caudate_Vol', 'FS_R_Caudate_Vol', 'FS_L_Putamen_Vol', 'FS_R_Putamen_Vol',
         ]
@@ -74,28 +71,18 @@ def main():
         categorical_columns = ['Age', 'Gender']
 
         prior_edges = [
-            ('Age', 'CogFluidComp_Unadj'), ('Age', 'CogCrystalComp_Unadj'), ('Age', 'MMSE_Score'),
-            ('Gender', 'CogFluidComp_Unadj'), ('Gender', 'CogCrystalComp_Unadj'),
-            ('MMSE_Score', 'CogFluidComp_Unadj'), ('MMSE_Score', 'CogCrystalComp_Unadj'),
-            ('FS_Total_GM_Vol', 'CogFluidComp_Unadj'), ('FS_Total_GM_Vol', 'CogCrystalComp_Unadj'),
-            ('FS_Tot_WM_Vol', 'CogFluidComp_Unadj'), ('FS_Tot_WM_Vol', 'CogCrystalComp_Unadj'),
+            ('Age', 'CogFluidComp_Unadj'), ('Age', 'MMSE_Score'),
+            ('Gender', 'CogFluidComp_Unadj'),
+            ('MMSE_Score', 'CogFluidComp_Unadj'),
+            ('FS_Tot_WM_Vol', 'CogFluidComp_Unadj'),
             ('FS_L_Hippo_Vol', 'CogFluidComp_Unadj'), ('FS_R_Hippo_Vol', 'CogFluidComp_Unadj'),
             ('FS_L_Amygdala_Vol', 'NEOFAC_O'), ('FS_R_Amygdala_Vol', 'NEOFAC_O'),
-            ('NEOFAC_O', 'CogCrystalComp_Unadj'), ('NEOFAC_C', 'CogFluidComp_Unadj'),
-            ('FS_L_Hippo_Vol', 'NEOFAC_O'), ('FS_R_Hippo_Vol', 'NEOFAC_O'),
+            ('NEOFAC_O', 'CogFluidComp_Unadj'), ('NEOFAC_C', 'CogFluidComp_Unadj'),
             ('ProcSpeed_Unadj', 'CogFluidComp_Unadj'), ('CardSort_Unadj', 'CogFluidComp_Unadj'),
-            ('ProcSpeed_Unadj', 'CogCrystalComp_Unadj'), ('CardSort_Unadj', 'CogCrystalComp_Unadj'),
             ('ProcSpeed_Unadj', 'MMSE_Score'), ('CardSort_Unadj', 'MMSE_Score'),
             ('ProcSpeed_Unadj', 'NEOFAC_O'), ('CardSort_Unadj', 'NEOFAC_C'),
         ]
 
-        features_to_remove = ['FS_Total_GM_Vol', 'FS_TotCort_GM_Vol', 'CogCrystalComp_Unadj']
-
-        behavioral_features = [f for f in behavioral_features if f not in features_to_remove]
-        hcp_features = [f for f in hcp_features if f not in features_to_remove]
-        prior_edges = [edge for edge in prior_edges if edge[0] not in features_to_remove and edge[1] not in features_to_remove]
-
-        logger.info("Preparing data...")
         data, categorical_columns, categories = prepare_data(
             behavioral_path=behavioral_path,
             hcp_path=hcp_path,
@@ -105,20 +92,23 @@ def main():
             index='Subject'
         )
 
-        logger.info("Creating Bayesian Network")
         model = BayesianModel(method='nsl', max_parents=6, iterations=1500, categorical_columns=categorical_columns)
         model.fit(data, prior_edges=prior_edges)
 
-        required_nodes = ["CogFluidComp_Unadj", "MMSE_Score", "NEOFAC_O", "NEOFAC_C", "ProcSpeed_Unadj", "CardSort_Unadj"]
-        missing_nodes = [node for node in required_nodes if node not in model.network.nodes]
-        if missing_nodes:
-            logger.error(f"Missing nodes in the Bayesian Network: {', '.join(missing_nodes)}")
-            return
+        analysis_params = {
+            "target_variable": "CogFluidComp_Unadj",
+            "personality_traits": ["NEOFAC_O", "NEOFAC_C"],
+            "cognitive_measures": ["CogFluidComp_Unadj", "MMSE_Score", "ProcSpeed_Unadj", "CardSort_Unadj"],
+            "brain_structure_features": ["FS_L_Hippo_Vol", "FS_R_Hippo_Vol", "FS_L_Amygdala_Vol", "FS_R_Amygdala_Vol"],
+            "age_column": "Age",
+            "gender_column": "Gender",
+            "brain_stem_column": "FS_BrainStem_Vol",
+            "age_groups": {"Young": (22, 35), "Middle": (36, 50), "Old": (51, 100)},
+            "feature_thresholds": {"NEOFAC_O": 0.1, "FS_L_Hippo_Vol": 0.1}
+        }
 
-        logger.info("Analyzing Bayesian Network and writing results")
-        results = {}
-        write_results_to_json(model.network, data, results)
-        write_summary_to_json(model.network, results)
+        write_results_to_json(model.network, data, analysis_params)
+        write_summary_to_json(model.network, analysis_params)
 
         logger.info("Analysis complete.")
     except Exception as e:
