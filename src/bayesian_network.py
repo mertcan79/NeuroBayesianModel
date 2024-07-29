@@ -402,9 +402,9 @@ class BayesianNetwork:
 
     def get_key_relationships(self):
         key_relationships = {}
-        for (parent, child), probability in self.compute_all_edge_probabilities().items():
+        for edge, probability in self.compute_all_edge_probabilities().items():
             if probability > 0.5:  # Example threshold for "key" relationships
-                key_relationships[(parent, child)] = probability
+                key_relationships[edge] = probability
         return key_relationships
 
     def compute_sensitivity(self, target_variable: str):

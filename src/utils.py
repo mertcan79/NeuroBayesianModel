@@ -23,21 +23,11 @@ def make_serializable(obj):
     else:
         return obj
 
-def write_results_to_json(network, data: pd.DataFrame, params: Dict[str, Any], filename: str = None):
-    if filename is None:
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename = f"results_{timestamp}.json"
-    
-    log_folder = "logs"
-    if not os.path.exists(log_folder):
-        os.makedirs(log_folder)
-    
-    file_path = os.path.join(log_folder, filename)
+def calculate_results(network, data: pd.DataFrame, params: Dict[str, Any]) -> Dict:
 
     results = {}
-
+    
     results["edge_probabilities"] = network.compute_all_edge_probabilities()
-
     results["network_structure"] = network.explain_structure_extended()
     results["edge_probabilities"] = network.compute_all_edge_probabilities()
     results["key_relationships"] = network.get_key_relationships()
@@ -54,6 +44,23 @@ def write_results_to_json(network, data: pd.DataFrame, params: Dict[str, Any], f
     results["age_specific_insights"] = get_age_specific_insights(data, params["age_column"], params["target_variable"])
     results["gender_specific_insights"] = get_gender_specific_insights(data, params["gender_column"], params["target_variable"])
     results["key_findings_summary"] = summarize_key_findings(network, params["target_variable"])
+    results["network_structure"] = network.explain_structure_extended()
+    results["summarize_personality_cognition"] = summarize_personality_cognition(results["personality_cognition_relationships"])
+    results["mean_log_likelihood"] = get_mean_log_likelihood()
+    results["std_log_likelihood"] = get_std_log_likelihood()
+
+    return results
+
+def write_results_to_json(results: Dict, filename: str = None):
+    if filename is None:
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"results_{timestamp}.json"
+    
+    log_folder = "logs"
+    if not os.path.exists(log_folder):
+        os.makedirs(log_folder)
+    
+    file_path = os.path.join(log_folder, filename)
 
     serializable_results = make_serializable(results)
     
@@ -64,40 +71,16 @@ def write_results_to_json(network, data: pd.DataFrame, params: Dict[str, Any], f
     except Exception as e:
         print(f"Error writing results to file: {str(e)}")
 
-def write_summary_to_json(network, params: Dict[str, Any], filename: str = None):
-    if filename is None:
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename = f"bayesian_network_summary_{timestamp}.json"
-    
-    log_folder = "logs"
-    if not os.path.exists(log_folder):
-        os.makedirs(log_folder)
-    
-    file_path = os.path.join(log_folder, filename)
-
-    summary = {
-        "network_structure": network.explain_structure_extended(),
-        #"mean_log_likelihood": results.get("mean_log_likelihood"),
-        #"std_log_likelihood": results.get("std_log_likelihood"),
-        #"sensitivity": results.get("sensitivity"),
-        "num_nodes": len(network.nodes),
-        "num_edges": len(network.get_edges()),
-        "categorical_variables": network.categorical_columns,
-        "continuous_variables": [node for node in network.nodes if node not in network.categorical_columns],
-        "key_findings": summarize_key_findings(network, params["target_variable"]),
-        "future_research_directions": network.suggest_future_research(),
-        "key_personality_cognition_findings": summarize_personality_cognition(results.get("personality_cognition_relationships")),
-        "significant_age_dependent_changes": summarize_age_dependent_changes(results.get("age_dependent_relationships")),
-    }
-
-    try:
-        with open(file_path, 'w') as f:
-            json.dump(summary, f, indent=2)
-        print(f"Summary successfully written to {file_path}")
-    except Exception as e:
-        print(f"Error writing summary to file: {str(e)}")
-
 # Utility functions
+
+def get_mean_log_likelihood(network, data):
+    log_likelihoods = [network.log_likelihood(sample) for _, sample in data.iterrows()]
+    return np.mean(log_likelihoods)
+
+def get_std_log_likelihood(network, data):
+    log_likelihoods = [network.log_likelihood(sample) for _, sample in data.iterrows()]
+    return np.std(log_likelihoods)
+
 def compute_vif(data: pd.DataFrame) -> Dict[str, float]:
     X = data.select_dtypes(include=[np.number])
     vif_data = pd.DataFrame()
@@ -132,12 +115,11 @@ def compute_feature_importance(data: pd.DataFrame, target_variable: str) -> Dict
     mi_scores = mutual_info_regression(X, y)
     return dict(zip(X.columns, mi_scores))
 
-def get_unexpected_insights(network, target_variable):
+def get_unexpected_insights(network, target_variable, analysis_variables):
     insights = []
     sensitivity = network.compute_sensitivity(target_variable)
     # Analyze hemispheric differences
-    left_right_pairs = [('FS_L_Amygdala_Vol', 'FS_R_Amygdala_Vol'), ('FS_L_Hippo_Vol', 'FS_R_Hippo_Vol')]
-    for left, right in left_right_pairs:
+    for left, right in analysis_variables:
         if left in sensitivity and right in sensitivity:
             diff = sensitivity[right] - sensitivity[left]
             if abs(diff) > 0.1:
@@ -177,7 +159,7 @@ def generate_actionable_insights(network, target_variable: str, feature_threshol
     
     return insights
 
-def analyze_personality_cognition_relationship(data, personality_traits, cognitive_measures):
+def analyze_personality_cognition_relationship(data, personality_traits, cognitive_measures) -> Dict:
     relationships = {}
     for trait in personality_traits:
         for measure in cognitive_measures:
@@ -382,14 +364,16 @@ def perform_sensitivity_analysis(network, data: pd.DataFrame, target: str, pertu
             results[column] = sensitivity
     return results
 
-def summarize_personality_cognition(relationships: Dict[str, float]) -> str:
-    summary = "Personality-Cognition Relationships:\n"
-    for relationship, correlation in relationships.items():
-        trait, measure = relationship.split('-')
-        strength = "strong" if abs(correlation) > 0.5 else "moderate" if abs(correlation) > 0.3 else "weak"
-        direction = "positive" if correlation > 0 else "negative"
-        summary += f"- {trait} shows a {strength} {direction} relationship with {measure} (r = {correlation:.2f})\n"
-    return summary
+def summarize_personality_cognition(personality_cognition_relationships):
+    if not personality_cognition_relationships:
+        return "No personality-cognition relationships found."
+    
+    summary = []
+    for trait, measures in personality_cognition_relationships.items():
+        strongest_measure = max(measures.items(), key=lambda x: abs(x[1]['correlation']))
+        summary.append(f"{trait} shows strongest relationship with {strongest_measure[0]} (r={strongest_measure[1]['correlation']:.2f}, p={strongest_measure[1]['p_value']:.4f})")
+    
+    return "\n".join(summary)
 
 def summarize_age_dependent_changes(age_differences: Dict[str, float]) -> str:
     summary = "Age-Dependent Changes in Cognitive Relationships:\n"

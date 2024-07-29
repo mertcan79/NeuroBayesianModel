@@ -9,7 +9,7 @@ import pandas as pd
 import numpy as np
 from src.data_processing import prepare_data
 from src.modeling import BayesianModel
-from src.utils import write_results_to_json, write_summary_to_json  # Adjusted import path
+from src.utils import calculate_results, write_results_to_json
 
 
 load_dotenv()
@@ -106,17 +106,18 @@ def main():
             "gender_column": "Gender",
             "brain_stem_column": "FS_BrainStem_Vol",
             "age_groups": {"Young": (22, 35), "Middle": (36, 50), "Old": (51, 100)},
-            "feature_thresholds": {"NEOFAC_O": 0.1, "FS_L_Hippo_Vol": 0.1}
+            "feature_thresholds": {"NEOFAC_O": 0.1, "FS_L_Hippo_Vol": 0.1},
+            "analysis_variables": [('FS_L_Amygdala_Vol', 'FS_R_Amygdala_Vol'), ('FS_L_Hippo_Vol', 'FS_R_Hippo_Vol')]
         }
 
         try:
-            write_results_to_json(network=model.network, data=data, params=analysis_params)
-            write_summary_to_json(network=model.network, results=results, params=analysis_params)
+            results = calculate_results(model.network, data, analysis_params)
+            write_results_to_json(results)
+            logger.info("Analysis complete.")
         except Exception as e:
-            logger.error(f"Error in writing to json: {str(e)}")
-            raise
+            logger.error(f"An error occurred: {str(e)}")
+            logger.exception("Exception details:")
 
-        logger.info("Analysis complete.")
 
     except Exception as e:
         logger.error(f"An error occurred: {str(e)}")
