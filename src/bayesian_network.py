@@ -1,7 +1,5 @@
 import json
-import os
 from typing import Dict, Any, Tuple, Callable, List, Optional
-from datetime import datetime
 from functools import lru_cache
 import logging
 
@@ -11,6 +9,7 @@ from scipy.stats import norm, multivariate_normal
 import networkx as nx
 import statsmodels.api as sm
 from scipy.stats import chi2_contingency
+from scipy import stats
 
 from bayesian_node import BayesianNode, CategoricalNode, Node
 from structure_learning import learn_structure
@@ -304,3 +303,68 @@ class BayesianNetwork:
             data[col] = data[col].astype('category')
         return data
 
+def explain_structure_extended(self):
+    if not hasattr(self, 'graph') or not self.graph:
+        return "The network structure has not been learned yet."
+    G = nx.DiGraph(self.graph)
+    
+    summary = []
+    
+    # Identify hub nodes (nodes with high degree)
+    degrees = dict(G.degree())
+    hub_threshold = np.percentile(list(degrees.values()), 80)  # Top 20% as hubs
+    hubs = [node for node, degree in degrees.items() if degree > hub_threshold]
+    
+    summary.append(f"Key hub variables: {', '.join(hubs)}")
+    
+    # Identify strongly connected components
+    components = list(nx.strongly_connected_components(G))
+    if len(components) > 1:
+        summary.append(f"The network has {len(components)} strongly connected components.")
+    
+    # Identify potential causal pathways
+    cognitive_vars = ['CogFluidComp_Unadj', 'MMSE_Score']  # Example cognitive variables
+    brain_vars = ['FS_L_Hippo_Vol', 'FS_R_Hippo_Vol', 'FS_Tot_WM_Vol']  # Example brain structure variables
+    
+    for cog_var in cognitive_vars:
+        for brain_var in brain_vars:
+            paths = list(nx.all_simple_paths(G, brain_var, cog_var))
+            if paths:
+                summary.append(f"Potential pathway from {brain_var} to {cog_var}: {' -> '.join(paths[0])}")
+    
+    # Identify feedback loops
+    cycles = list(nx.simple_cycles(G))
+    if cycles:
+        summary.append(f"The network contains {len(cycles)} feedback loops.")
+        if len(cycles) <= 3:  # Only show a few examples
+            summary.append(f"Example loop: {' -> '.join(cycles[0] + [cycles[0][0]])}")
+    
+    # Analyze edge strengths using Cramer's V for categorical variables
+    edge_strengths = {}
+    for parent, child in G.edges():
+        if parent in self.categorical_columns or child in self.categorical_columns:
+            cramer_v = self._compute_categorical_edge_strength(parent, child)
+            edge_strengths[(parent, child)] = cramer_v
+        else:
+            correlation = self._compute_continuous_edge_strength(parent, child)
+            edge_strengths[(parent, child)] = abs(correlation)
+    
+    # Report strongest relationships
+    strongest_edges = sorted(edge_strengths.items(), key=lambda x: x[1], reverse=True)[:5]
+    summary.append("Strongest relationships in the network:")
+    for (parent, child), strength in strongest_edges:
+        summary.append(f"  {parent} -> {child}: strength = {strength:.2f}")
+    
+    return "\n".join(summary)
+
+def _compute_categorical_edge_strength(self, parent, child):
+    contingency_table = pd.crosstab(self.data[parent], self.data[child])
+    chi2, _, _, _ = stats.chi2_contingency(contingency_table)
+    n = self.data.shape[0]
+    min_dim = min(contingency_table.shape) - 1
+    cramer_v = np.sqrt(chi2 / (n * min_dim))
+    return cramer_v
+
+def _compute_continuous_edge_strength(self, parent, child):
+    correlation, _ = stats.pearsonr(self.data[parent], self.data[child])
+    return correlation

@@ -3,10 +3,12 @@ import json
 from datetime import datetime
 import numpy as np
 import pandas as pd
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Tuple
 from statsmodels.stats.outliers_influence import variance_inflation_factor
 from statsmodels.stats.diagnostic import het_breuschpagan
 from sklearn.feature_selection import mutual_info_regression
+from scipy import stats
+
 
 def make_serializable(obj):
     if isinstance(obj, np.ndarray):
@@ -35,7 +37,15 @@ def write_results_to_json(network, data: pd.DataFrame, results: Dict[str, Any], 
 
     # Add all analysis results
     results["network_structure"] = network.explain_structure_extended()
-    results["edge_probabilities"] = network.compute_edge_probabilities()
+    edge_probabilities = network.compute_edge_probabilities()
+    results["edge_probabilities"] = {
+        f"{parent} -> {child}": {
+            "probability": f"{prob['probability']:.2f}",
+            "strength": prob['strength'],
+            "interpretation": prob['interpretation']
+        }
+        for (parent, child), prob in edge_probabilities.items()
+    }
     results["key_relationships"] = network.get_key_relationships()
     results["feature_importance"] = compute_feature_importance(network, data)
     results["unexpected_insights"] = get_unexpected_insights(network)
@@ -140,162 +150,206 @@ def compute_feature_importance(model, data: pd.DataFrame) -> Dict[str, float]:
     mi_scores = mutual_info_regression(X, y)
     return dict(zip(X.columns, mi_scores))
 
-def get_unexpected_insights(network):
+def get_unexpected_insights(network, target_variable):
     insights = []
-    sensitivity = network.compute_sensitivity("CogFluidComp_Unadj")
+    sensitivity = network.compute_sensitivity(target_variable)
     
-    if sensitivity["FS_R_Amygdala_Vol"] > sensitivity["FS_L_Amygdala_Vol"]:
-        insights.append("Right amygdala volume shows stronger influence on fluid cognitive ability than left amygdala volume.")
+    # Analyze hemispheric differences
+    left_right_pairs = [('FS_L_Amygdala_Vol', 'FS_R_Amygdala_Vol'), ('FS_L_Hippo_Vol', 'FS_R_Hippo_Vol')]
+    for left, right in left_right_pairs:
+        if left in sensitivity and right in sensitivity:
+            diff = sensitivity[right] - sensitivity[left]
+            if abs(diff) > 0.1:
+                insights.append(f"{right} shows {'stronger' if diff > 0 else 'weaker'} influence on {target_variable} than {left} (difference: {diff:.2f}). This suggests potential hemispheric specialization.")
     
-    if sensitivity["NEOFAC_O"] > sensitivity["NEOFAC_C"]:
-        insights.append("Openness to experience has a stronger relationship with fluid cognitive ability than conscientiousness.")
+    # Analyze personality traits
+    personality_traits = [trait for trait in sensitivity if trait.startswith('NEOFAC_')]
+    if len(personality_traits) >= 2:
+        top_trait = max(personality_traits, key=lambda x: abs(sensitivity[x]))
+        for trait in personality_traits:
+            if trait != top_trait:
+                diff = sensitivity[top_trait] - sensitivity[trait]
+                if abs(diff) > 0.1:
+                    insights.append(f"{top_trait} has a stronger relationship with {target_variable} than {trait} (difference: {diff:.2f}). This may indicate that {top_trait.split('_')[1]} is more closely tied to {target_variable}.")
     
-    if sensitivity["FS_Tot_WM_Vol"] > sensitivity["FS_Total_GM_Vol"]:
-        insights.append("Total white matter volume shows stronger influence on cognitive performance than total gray matter volume.")
+    # Analyze brain structure relationships
+    brain_structures = [struct for struct in sensitivity if struct.startswith('FS_')]
+    if len(brain_structures) >= 2:
+        top_structure = max(brain_structures, key=lambda x: abs(sensitivity[x]))
+        insights.append(f"{top_structure} shows the strongest influence on {target_variable} among brain structures (sensitivity: {sensitivity[top_structure]:.2f}). This suggests its critical role in cognitive performance.")
     
     return insights
 
-def generate_actionable_insights(network):
+def generate_actionable_insights(network, target_variable: str, feature_thresholds: Dict[str, float]):
     insights = []
-    sensitivity = network.compute_sensitivity("CogFluidComp_Unadj")
+    sensitivity = network.compute_sensitivity(target_variable)
     
-    if sensitivity["FS_L_Hippo_Vol"] > 0.1:
-        insights.append("Focus on memory exercises to potentially improve fluid cognitive abilities.")
-    
-    if sensitivity["NEOFAC_O"] > 0.1:
-        insights.append("Encourage openness to new experiences as part of cognitive training.")
-    
-    if sensitivity["FS_BrainStem_Vol"] > 0.1:
-        insights.append("Consider incorporating balance and coordination exercises to potentially benefit cognitive function.")
+    for feature, threshold in feature_thresholds.items():
+        if sensitivity[feature] > threshold:
+            if "Hippo" in feature:
+                insights.append(f"Focus on memory exercises to potentially improve {target_variable}.")
+            elif feature.startswith("NEOFAC_"):
+                trait = feature.split('_')[1]
+                insights.append(f"Encourage {trait} as part of cognitive training.")
+            elif "BrainStem" in feature:
+                insights.append(f"Consider incorporating balance and coordination exercises to potentially benefit {target_variable}.")
     
     return insights
 
-def analyze_personality_cognition_relationship(data: pd.DataFrame):
-    personality_traits = ["NEOFAC_O", "NEOFAC_C"]
-    cognitive_measures = ["CogFluidComp_Unadj", "CogCrystalComp_Unadj"]
-    
+def analyze_personality_cognition_relationship(data, personality_traits, cognitive_measures):
     relationships = {}
     for trait in personality_traits:
         for measure in cognitive_measures:
-            correlation = np.corrcoef(data[trait], data[measure])[0, 1]
-            relationships[f"{trait}-{measure}"] = correlation
+            correlation, p_value = stats.pearsonr(data[trait], data[measure])
+            relationships[f"{trait}-{measure}"] = {
+                "correlation": correlation,
+                "p_value": p_value,
+                "significance": "Significant" if p_value < 0.05 else "Not Significant"
+            }
     
-    return relationships
+    # Find the strongest relationship
+    strongest = max(relationships.items(), key=lambda x: abs(x[1]["correlation"]))
+    
+    analysis = {
+        "relationships": relationships,
+        "strongest_relationship": {
+            "traits": strongest[0],
+            "correlation": strongest[1]["correlation"],
+            "p_value": strongest[1]["p_value"]
+        },
+        "interpretation": f"The strongest relationship is between {strongest[0]} (r={strongest[1]['correlation']:.2f}, p={strongest[1]['p_value']:.4f}). This suggests that {strongest[0].split('-')[0]} is particularly important for {strongest[0].split('-')[1]}."
+    }
+    
+    return analysis
 
-def analyze_age_dependent_relationships(data: pd.DataFrame):
-    young_data = data[data["Age"] < data["Age"].median()]
-    old_data = data[data["Age"] >= data["Age"].median()]
+def analyze_age_dependent_relationships(data: pd.DataFrame, age_column: str, target_variable: str):
+    median_age = data[age_column].median()
+    young_data = data[data[age_column] < median_age]
+    old_data = data[data[age_column] >= median_age]
     
-    young_correlations = young_data.corr()["CogFluidComp_Unadj"]
-    old_correlations = old_data.corr()["CogFluidComp_Unadj"]
+    young_correlations = young_data.corr()[target_variable]
+    old_correlations = old_data.corr()[target_variable]
     
     age_differences = {}
     for feature in young_correlations.index:
-        age_differences[feature] = old_correlations[feature] - young_correlations[feature]
+        if feature != target_variable:
+            age_differences[feature] = old_correlations[feature] - young_correlations[feature]
     
     return age_differences
 
-def get_practical_implications(network):
+def get_practical_implications(network, target_variable: str, feature_thresholds: Dict[str, float]):
     implications = []
-    sensitivity = network.compute_sensitivity("CogFluidComp_Unadj")
+    sensitivity = network.compute_sensitivity(target_variable)
     
-    if sensitivity["FS_Total_GM_Vol"] > 0.1:
-        implications.append("Focus on exercises that promote gray matter preservation, such as learning new skills or languages.")
-    
-    if sensitivity["FS_Tot_WM_Vol"] > 0.1:
-        implications.append("Incorporate tasks that challenge white matter integrity, like complex problem-solving or strategic thinking exercises.")
-    
-    if sensitivity["FS_BrainStem_Vol"] > 0.1:
-        implications.append("Consider including balance and coordination exercises, which may indirectly benefit cognitive function through brain stem activation.")
-    
-    if sensitivity["NEOFAC_O"] > 0.1:
-        implications.append("Encourage openness to new experiences as part of the cognitive training regimen.")
+    for feature, threshold in feature_thresholds.items():
+        if sensitivity[feature] > threshold:
+            if feature.startswith("FS_"):
+                implications.append(f"Focus on exercises that promote {feature} preservation or enhancement.")
+            elif feature.startswith("NEOFAC_"):
+                trait = feature.split('_')[1]
+                implications.append(f"Encourage {trait} as part of the cognitive training regimen.")
     
     return implications
 
-def perform_age_stratified_analysis(data: pd.DataFrame):
-    age_groups = {"Young": (0, 30), "Middle": (31, 60), "Older": (61, 100)}
-    
+def perform_age_stratified_analysis(data: pd.DataFrame, age_column: str, target_variable: str, age_groups: Dict[str, Tuple[int, int]]):
     results = {}
     for group, (min_age, max_age) in age_groups.items():
-        group_data = data[(data["Age"] >= min_age) & (data["Age"] <= max_age)]
+        group_data = data[(data[age_column] >= min_age) & (data[age_column] <= max_age)]
         results[group] = {
-            "correlation": group_data.corr()["CogFluidComp_Unadj"].to_dict(),
+            "correlation": group_data.corr()[target_variable].to_dict(),
             "mean": group_data.mean().to_dict(),
             "std": group_data.std().to_dict()
         }
     
     return results
 
-def explain_unexpected_findings(network):
+def explain_unexpected_findings(network, target_variable: str, brain_stem_column: str, left_amygdala_column: str, right_amygdala_column: str, threshold: float = -0.1):
     explanations = []
-    sensitivity = network.compute_sensitivity("CogFluidComp_Unadj")
+    sensitivity = network.compute_sensitivity(target_variable)
     
-    if sensitivity["FS_BrainStem_Vol"] < -0.1:
-        explanations.append("Unexpectedly, brain stem volume shows a negative relationship with fluid cognitive ability. This could suggest complex compensatory mechanisms.")
+    if sensitivity[brain_stem_column] < threshold:
+        explanations.append(f"Unexpectedly, {brain_stem_column} shows a negative relationship with {target_variable}. This could suggest complex compensatory mechanisms.")
     
-    if sensitivity["FS_R_Amygdala_Vol"] > sensitivity["FS_L_Amygdala_Vol"]:
-        explanations.append("The right amygdala volume appears to have a stronger influence on fluid cognitive ability than the left. This asymmetry might indicate a more significant role of right-hemisphere emotional processing in cognitive flexibility.")
+    if sensitivity[right_amygdala_column] > sensitivity[left_amygdala_column]:
+        explanations.append(f"The {right_amygdala_column} appears to have a stronger influence on {target_variable} than the {left_amygdala_column}. This asymmetry might indicate a more significant role of right-hemisphere emotional processing in cognitive flexibility.")
     
     return explanations
 
-def analyze_brain_stem_relationship(data: pd.DataFrame):
+def analyze_brain_stem_relationship(data: pd.DataFrame, brain_stem_column: str, target_variables: List[str]):
     brain_stem_correlations = {}
-    for measure in ["CogFluidComp_Unadj", "CogCrystalComp_Unadj", "ProcSpeed_Unadj"]:
-        correlation = np.corrcoef(data["FS_BrainStem_Vol"], data[measure])[0, 1]
+    for measure in target_variables:
+        correlation = np.corrcoef(data[brain_stem_column], data[measure])[0, 1]
         brain_stem_correlations[measure] = correlation
     return brain_stem_correlations
 
-def get_clinical_insights(network):
+def get_clinical_insights(network, target_variable, feature_categories):
     insights = []
-    sensitivity = network.compute_sensitivity("CogFluidComp_Unadj")
+    sensitivity = network.compute_sensitivity(target_variable)
     
-    for feature, value in sensitivity.items():
-        if abs(value) > 0.1:
-            insights.append(f"{feature} has a significant impact on fluid cognitive abilities (sensitivity: {value:.2f})")
+    # Analyze top influences in each category
+    for category, features in feature_categories.items():
+        category_features = [f for f in sensitivity if f in features]
+        if category_features:
+            top_feature = max(category_features, key=lambda x: abs(sensitivity[x]))
+            value = sensitivity[top_feature]
+            insights.append(f"The most influential {category} feature for {target_variable} is {top_feature} (sensitivity: {value:.2f}). ")
+            
+            if category == "Brain Structure":
+                insights[-1] += f"This suggests that {'increases' if value > 0 else 'decreases'} in {top_feature} are associated with {'higher' if value > 0 else 'lower'} {target_variable}."
+            elif category == "Personality":
+                insights[-1] += f"This indicates that the personality trait of {top_feature.split('_')[1]} plays a significant role in {target_variable}."
+            else:
+                insights[-1] += f"This highlights the importance of {top_feature} in overall cognitive function."
+    
+    # Analyze interactions
+    edge_probabilities = network.compute_edge_probabilities()
+    strongest_edge = max(edge_probabilities.items(), key=lambda x: x[1]['probability'])
+    insights.append(f"The strongest relationship in the network is between {strongest_edge[0][0]} and {strongest_edge[0][1]} (probability: {strongest_edge[1]['probability']:.2f}). {strongest_edge[1]['interpretation']}")
     
     return insights
 
-def get_age_specific_insights(data: pd.DataFrame) -> List[str]:
-    young_data = data[data["Age"] < data["Age"].median()]
-    old_data = data[data["Age"] >= data["Age"].median()]
+
+def get_age_specific_insights(data: pd.DataFrame, age_column: str, target_variable: str, threshold: float = 0.1) -> List[str]:
+    median_age = data[age_column].median()
+    young_data = data[data[age_column] < median_age]
+    old_data = data[data[age_column] >= median_age]
     
-    young_corr = young_data.corr()["CogFluidComp_Unadj"]
-    old_corr = old_data.corr()["CogFluidComp_Unadj"]
+    young_corr = young_data.corr()[target_variable]
+    old_corr = old_data.corr()[target_variable]
     
     insights = []
     for feature in young_corr.index:
-        if abs(young_corr[feature] - old_corr[feature]) > 0.1:
+        if feature != target_variable and abs(young_corr[feature] - old_corr[feature]) > threshold:
             if young_corr[feature] > old_corr[feature]:
-                insights.append(f"{feature} has a stronger influence on fluid cognitive abilities in younger individuals")
+                insights.append(f"{feature} has a stronger influence on {target_variable} in younger individuals")
             else:
-                insights.append(f"{feature} has a stronger influence on fluid cognitive abilities in older individuals")
+                insights.append(f"{feature} has a stronger influence on {target_variable} in older individuals")
     
     return insights
 
-def get_gender_specific_insights(data: pd.DataFrame):
-    male_data = data[data["Gender"] == 0]
-    female_data = data[data["Gender"] == 1]
+def get_gender_specific_insights(data: pd.DataFrame, gender_column: str, target_variable: str, male_value: int = 0, female_value: int = 1, threshold: float = 0.1):
+    male_data = data[data[gender_column] == male_value]
+    female_data = data[data[gender_column] == female_value]
     
-    male_corr = male_data.corr()["CogFluidComp_Unadj"]
-    female_corr = female_data.corr()["CogFluidComp_Unadj"]
+    male_corr = male_data.corr()[target_variable]
+    female_corr = female_data.corr()[target_variable]
     
     insights = []
     for feature in male_corr.index:
-        if abs(male_corr[feature] - female_corr[feature]) > 0.1:
+        if feature != target_variable and abs(male_corr[feature] - female_corr[feature]) > threshold:
             if male_corr[feature] > female_corr[feature]:
-                insights.append(f"{feature} has a stronger influence on fluid cognitive abilities in males")
+                insights.append(f"{feature} has a stronger influence on {target_variable} in males")
             else:
-                insights.append(f"{feature} has a stronger influence on fluid cognitive abilities in females")
+                insights.append(f"{feature} has a stronger influence on {target_variable} in females")
     
     return insights
 
-def summarize_key_findings(network) -> str:
+def summarize_key_findings(network, target_variable: str, top_n: int = 5) -> str:
     summary = []
-    sensitivity = network.compute_sensitivity("CogFluidComp_Unadj")
-    top_features = sorted(sensitivity.items(), key=lambda x: abs(x[1]), reverse=True)[:5]
+    sensitivity = network.compute_sensitivity(target_variable)
+    top_features = sorted(sensitivity.items(), key=lambda x: abs(x[1]), reverse=True)[:top_n]
     
-    summary.append("Top 5 influential features for fluid cognitive ability:")
+    summary.append(f"Top {top_n} influential features for {target_variable}:")
     for feature, value in top_features:
         summary.append(f"- {feature}: {value:.2f}")
     
@@ -363,3 +417,38 @@ def summarize_age_dependent_changes(age_differences: Dict[str, float]) -> str:
             direction = "stronger" if difference > 0 else "weaker"
             summary += f"- The relationship between {variable} and cognitive ability becomes {direction} with age (Δr = {difference:.2f})\n"
     return summary
+
+def perform_longitudinal_analysis(data, time_column, target_variable, subject_column):
+    subjects = data[subject_column].unique()
+    
+    results = {
+        "overall_trend": {},
+        "individual_trends": {},
+        "rate_of_change": {}
+    }
+    
+    # Overall trend
+    overall_trend = data.groupby(time_column)[target_variable].mean()
+    results["overall_trend"] = overall_trend.to_dict()
+    
+    # Individual trends and rate of change
+    for subject in subjects:
+        subject_data = data[data[subject_column] == subject].sort_values(time_column)
+        
+        if len(subject_data) > 1:
+            # Calculate trend
+            trend, _ = np.polyfit(subject_data[time_column], subject_data[target_variable], 1)
+            results["individual_trends"][subject] = trend
+            
+            # Calculate rate of change
+            total_change = subject_data[target_variable].iloc[-1] - subject_data[target_variable].iloc[0]
+            time_span = subject_data[time_column].iloc[-1] - subject_data[time_column].iloc[0]
+            rate_of_change = total_change / time_span
+            results["rate_of_change"][subject] = rate_of_change
+    
+    # Analyze results
+    avg_rate_of_change = np.mean(list(results["rate_of_change"].values()))
+    results["analysis"] = f"The average rate of change in {target_variable} is {avg_rate_of_change:.2f} units per time point. "
+    results["analysis"] += "This suggests a " + ("positive" if avg_rate_of_change > 0 else "negative") + f" trend in {target_variable} over time."
+    
+    return results
