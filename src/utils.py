@@ -131,7 +131,6 @@ def compute_feature_importance(model, data: pd.DataFrame) -> Dict[str, float]:
 def get_unexpected_insights(network, target_variable):
     insights = []
     sensitivity = network.compute_sensitivity(target_variable)
-    
     # Analyze hemispheric differences
     left_right_pairs = [('FS_L_Amygdala_Vol', 'FS_R_Amygdala_Vol'), ('FS_L_Hippo_Vol', 'FS_R_Hippo_Vol')]
     for left, right in left_right_pairs:

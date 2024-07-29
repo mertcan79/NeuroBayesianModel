@@ -7,9 +7,6 @@ from scipy import stats
 from scipy.stats import norm
 
 def optimize_data_types(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Convert int64 to int32 and float64 to float32 to save memory.
-    """
     for col in df.columns:
         if pd.api.types.is_integer_dtype(df[col]):
             if df[col].dtype == 'int64':
@@ -37,38 +34,38 @@ def transform_skewed_features(data: pd.DataFrame, threshold: float = 0.5) -> pd.
             data[col] = np.log1p(data[col] - data[col].min())
     return data
 
-def bayesian_outlier_treatment(data: pd.DataFrame, columns: List[str], credible_interval: float = 0.95) -> pd.DataFrame:
+def simple_outlier_treatment(data: pd.DataFrame, columns: List[str], threshold: float = 1.5) -> pd.DataFrame:
     for col in columns:
         if col in data.columns:
-            # Remove non-finite values for fitting
             col_data = data[col].dropna()
-            
+
             if len(col_data) == 0:
                 print(f"Warning: Column {col} contains only non-finite values. Skipping.")
                 continue
-            
-            # Fit a normal distribution to the data
-            mu, std = norm.fit(col_data)
-            
-            # Calculate credible interval
-            lower, upper = norm.interval(credible_interval, loc=mu, scale=std)
-            
-            # Replace outliers with samples from the fitted distribution
-            mask = (data[col] < lower) | (data[col] > upper)
-            n_outliers = mask.sum()
-            
-            # Only replace finite outliers
+
+            # Calculate IQR
+            Q1 = col_data.quantile(0.25)
+            Q3 = col_data.quantile(0.75)
+            IQR = Q3 - Q1
+
+            # Determine outliers
+            lower_bound = Q1 - threshold * IQR
+            upper_bound = Q3 + threshold * IQR
+
+            mask = (data[col] < lower_bound) | (data[col] > upper_bound)
             finite_mask = mask & np.isfinite(data[col])
             n_finite_outliers = finite_mask.sum()
-            
-            if n_finite_outliers > 0:
-                data.loc[finite_mask, col] = norm.rvs(loc=mu, scale=std, size=n_finite_outliers)
-            
-            if n_outliers != n_finite_outliers:
-                print(f"Warning: {n_outliers - n_finite_outliers} non-finite outliers in column {col} were not replaced.")
-    
-    return data
 
+            if n_finite_outliers > 0:
+                replacement_value = col_data.mean()
+                # Cast replacement_value to the same dtype as the column
+                replacement_value = replacement_value.astype(data[col].dtype)
+                data.loc[finite_mask, col] = replacement_value
+
+            if mask.sum() != n_finite_outliers:
+                print(f"Warning: {mask.sum() - n_finite_outliers} non-finite outliers in column {col} were not replaced.")
+
+    return data
 
 def preprocess_data(data: pd.DataFrame, categorical_columns: List[str], index: str = None) -> pd.DataFrame:
     data = data.copy()
@@ -86,7 +83,7 @@ def preprocess_data(data: pd.DataFrame, categorical_columns: List[str], index: s
     numeric_columns = data.select_dtypes(include=[np.number]).columns.tolist()
     numeric_columns = [col for col in numeric_columns if col not in categorical_columns]
 
-    data = bayesian_outlier_treatment(data, numeric_columns)
+    data = simple_outlier_treatment(data, numeric_columns)
     
     # Handle numeric columns
     numeric_imputer = SimpleImputer(strategy='median')
@@ -122,7 +119,6 @@ def prepare_data(behavioral_path: str, hcp_path: str,
     
     processed_data = preprocess_data(data, categorical_columns, index)
     
-    # Get categories for categorical variables
     categories = {}
     for col in categorical_columns:
         if col in processed_data.columns:

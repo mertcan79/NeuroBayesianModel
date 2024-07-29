@@ -17,7 +17,6 @@ environment = os.getenv('ENVIRONMENT', 'local')
 data_path = os.getenv('LOCAL_DATA_PATH') if environment == 'local' else os.getenv('CLOUD_DATA_PATH')
 processed_data_path = os.getenv('LOCAL_DATA_PATH_PROCESSED') if environment == 'local' else os.getenv('CLOUD_DATA_PATH')
 
-# File paths
 behavioral_path = os.path.join(data_path, 'connectome_behavioral.csv')
 behavioral_path_processed = os.path.join(processed_data_path, 'connectome_behavioral.csv')
 hcp_path = os.path.join(data_path, 'hcp_freesurfer.csv')
@@ -25,9 +24,8 @@ hcp_path_processed = os.path.join(processed_data_path, 'hcp_freesurfer.csv')
 
 def preprocess_hcp():
     def map_age_to_category(age_str):
-        # Define age bins and corresponding ordinal categories
         bins = ['22-25', '26-30', '31-35', '36+']
-        categories = [1, 2, 3, 4]  # Assigning ordinal values to age ranges
+        categories = [1, 2, 3, 4]
         
         if pd.isna(age_str):
             return np.nan
@@ -43,13 +41,9 @@ def preprocess_hcp():
             data['Age'] = data['Age'].apply(map_age_to_category)
         return data
 
-    # Load your data
     behavioral_data = pd.read_csv(behavioral_path)
     hcp_data = pd.read_csv(hcp_path)
-    # Process Age column
     behavioral_data = process_age_gender(behavioral_data)
-
-    # You can now save the processed data back to CSV if needed or pass it directly to prepare_data
     behavioral_data.to_csv(behavioral_path_processed, index=False)
     hcp_data.to_csv(hcp_path_processed, index=False)
 
