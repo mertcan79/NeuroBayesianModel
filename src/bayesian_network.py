@@ -1,5 +1,5 @@
 import json
-from typing import Dict, Any, Tuple, Callable, List, Optional
+from typing import Dict, Any, Tuple, Callable, List, Optional, Union
 from functools import lru_cache
 import logging
 
@@ -31,6 +31,68 @@ class BayesianNetwork:
         self.parameters = {}
         self.inference = None
 
+    def _initialize_parameters(self, data: pd.DataFrame, prior: Dict[str, Any] = None):
+        if prior is None:
+            prior = {}
+        
+        for node_name, node in self.nodes.items():
+            parents = self.get_parents(node_name)
+            print(f"Fitting node: {node_name}")
+            print(f"Parents: {parents}")
+            
+            if node_name in self.categorical_columns:
+                node.set_categorical(data[node_name].unique())
+                counts = data[node_name].value_counts()
+                self.parameters[node_name] = {
+                    'categories': counts.index.tolist(),
+                    'probabilities': (counts / counts.sum()).to_dict()
+                }
+                node.distribution = self.parameters[node_name]['probabilities']
+            else:
+                # Continuous node
+                if not parents:
+                    self.parameters[node_name] = {
+                        'mean': data[node_name].mean(),
+                        'std': data[node_name].std(),
+                        'coefficients': np.array([data[node_name].mean()])  # Add this line
+                    }
+                    node.distribution = norm(loc=self.parameters[node_name]['mean'], 
+                                            scale=self.parameters[node_name]['std'])
+                else:
+                    X = data[parents]
+                    y = data[node_name]
+                    X = sm.add_constant(X)
+                    model = sm.OLS(y, X).fit()
+                    print(f"X shape: {X.shape}")
+                    print(f"Coefficient shape: {model.params.shape}")
+                    self.parameters[node_name] = {
+                        'coefficients': model.params.values,
+                        'std': model.resid.std(),
+                        'mean': y.mean()
+                    }
+                    node.distribution = norm(loc=0, scale=self.parameters[node_name]['std'])
+                    print(f"Node {node_name} parameters: {self.parameters[node_name]}")
+
+    def _predict_mean(self, node, parent_data):
+        parameters = self.parameters[node]
+        
+        # Check if the node is categorical
+        if node in self.categorical_columns:
+            if 'mode' in parameters:
+                return parameters['mode']
+            else:
+                raise KeyError(f"'mode' key is missing in parameters for categorical node {node}.")
+        
+        # Proceed with linear regression for continuous nodes
+        if 'coefficients' not in parameters:
+            raise KeyError(f"'coefficients' key is missing in parameters for node {node}.")
+        
+        coefficients = parameters['coefficients']
+        intercept = parameters.get('intercept', 0)
+        mean = intercept + np.dot(parent_data, coefficients)
+        
+        return mean
+
     def fit(self, data: pd.DataFrame, prior_edges=None):
         self.data = self.preprocess_data(data)
         self.nodes = self._create_nodes_from_data(data)
@@ -42,11 +104,22 @@ class BayesianNetwork:
     def _fit_nodes(self, data: pd.DataFrame):
         for node_name, node in self.nodes.items():
             parents = self.get_parents(node_name)
-            if parents:
-                parent_data = data[parents]
-                node.fit(data[node_name], parent_data)
+            if node_name in self.categorical_columns:
+                mode_value = data[node_name].mode()[0]  # Compute mode for categorical node
+                self.parameters[node_name] = {'mode': mode_value}
             else:
-                node.fit(data[node_name])
+                if parents:
+                    parent_data = data[parents]
+                    node.fit(data[node_name], parent_data)
+                else:
+                    node.fit(data[node_name])
+                    self.parameters[node_name] = {
+                        'coefficients': node.coefficients,
+                        'intercept': node.intercept,
+                        'std': node.std,
+                        'mean': node.mean
+                    }
+
 
     def add_node(self, node: 'BayesianNode'):
         self.nodes[node.name] = node
@@ -206,55 +279,6 @@ class BayesianNetwork:
                 }
         return implications
 
-
-    def _initialize_parameters(self, data: pd.DataFrame, prior: Dict[str, Any] = None):
-        if prior is None:
-            prior = {}
-        
-        for node_name, node in self.nodes.items():
-            parents = self.get_parents(node_name)
-
-            if node_name in self.categorical_columns:
-                node.set_categorical(data[node_name].unique())
-                counts = data[node_name].value_counts()
-                self.parameters[node_name] = {
-                    'categories': counts.index.tolist(),
-                    'probabilities': (counts / counts.sum()).to_dict()
-                }
-                node.distribution = self.parameters[node_name]['probabilities']
-            else:
-                # Continuous node
-                if not parents:
-                    self.parameters[node_name] = {
-                        'mean': data[node_name].mean(),
-                        'std': data[node_name].std()
-                    }
-                    node.distribution = norm(loc=self.parameters[node_name]['mean'], 
-                                            scale=self.parameters[node_name]['std'])
-                else:
-                    X = data[parents]
-                    y = data[node_name]
-                    X = sm.add_constant(X)
-                    model = sm.OLS(y, X).fit()
-                    self.parameters[node_name] = {
-                        'coefficients': model.params.values,
-                        'std': model.resid.std(),
-                        'mean': y.mean()  # Add this line to ensure 'mean' is always present
-                    }
-                    node.distribution = norm(loc=0, scale=self.parameters[node_name]['std'])
-
-            if parents:
-                if node.is_categorical:
-                    # For categorical nodes with parents, we'll use a simple conditional probability table
-                    self.parameters[node_name]['cpt'] = {}
-                    for parent_values, group in data.groupby(parents):
-                        counts = group[node_name].value_counts()
-                        probs = counts / counts.sum()
-                        self.parameters[node_name]['cpt'][parent_values] = probs.to_dict()
-                else:
-                    # The distribution for continuous nodes with parents is already set above
-                    pass
-
     def _expectation_step(self, data: pd.DataFrame):
         responsibilities = {}
         for node in self.nodes:
@@ -287,24 +311,17 @@ class BayesianNetwork:
             node_data = data[node]
             if parents:
                 parent_data = data[parents]
-                mean = self._predict_mean(node, parent_data)
-                std = self.parameters[node].get('std', 1.0)  # Default to 1.0 if 'std' is not present
+                print(f"Node: {node}")
+                print(f"Parents: {parents}")
+                print(f"Parent data shape: {parent_data.shape}")
             else:
-                if 'mean' not in self.parameters[node]:
-                    # If 'mean' is not present, use the empirical mean of the data
-                    self.parameters[node]['mean'] = np.mean(node_data)
-                mean = self.parameters[node]['mean']
-                std = self.parameters[node].get('std', np.std(node_data))  # Use empirical std if not present
+                parent_data = None
+            mean = self._predict_mean(node, parent_data)
+            std = self.parameters[node].get('std', 1.0)
             
-            # Add a small constant to avoid log(0)
             epsilon = 1e-10
             log_likelihood += np.sum(norm.logpdf(node_data, loc=mean, scale=std + epsilon))
         return log_likelihood
-
-    def _predict_mean(self, node: str, parent_data: pd.DataFrame) -> np.ndarray:
-        coeff = self.parameters[node]['coefficients']
-        X = sm.add_constant(parent_data)
-        return X @ coeff
 
     def save(self, file_path: str):
         network_data = {
