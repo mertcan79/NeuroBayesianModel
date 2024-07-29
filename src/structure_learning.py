@@ -3,8 +3,10 @@ import pandas as pd
 from typing import Dict, List, Tuple
 import logging
 import statsmodels.api as sm
-
+import networkx as nx
+import random
 from bayesian_node import BayesianNode, CategoricalNode
+from sklearn.metrics import mutual_info_score
 
 logger = logging.getLogger(__name__)
 
@@ -14,43 +16,64 @@ def learn_structure(data, method="nsl", max_parents=4, iterations=300, prior_edg
     else:
         raise ValueError(f"Unsupported structure learning method: {method}")
 
-def neurological_structure_learning(data, prior_edges, max_parents=4, alpha=0.05):
-    nodes = list(data.columns)
-    edges = set(prior_edges) if prior_edges else set()
-
-    def compute_bic(node, parents):
-        X = data[parents]
-        y = data[node]
-        model = sm.OLS(y, sm.add_constant(X)).fit()
-        bic = model.bic
-        return bic
+def neurological_structure_learning(data, max_parents=6, iterations=1500, prior_edges=None):
+    # Initialize the graph
+    G = nx.DiGraph()
+    G.add_nodes_from(data.columns)
     
-    for node in nodes:
-        potential_parents = [n for n in nodes if n != node]
-        current_parents = [p for p, c in edges if c == node]
+    # Add prior edges if provided
+    if prior_edges:
+        G.add_edges_from(prior_edges)
+    
+    # Define the score function (BIC score)
+    def score_function(X, parents, node):
+        if len(parents) > max_parents:
+            return float('-inf')
+        if len(parents) == 0:
+            return mutual_info_score(X[node], X[node])
+        return mutual_info_score(X[parents], X[node])
+    
+    # Define the neighborhood function
+    def get_neighborhood(G):
+        for i in range(G.number_of_nodes()):
+            for j in range(G.number_of_nodes()):
+                if i != j:
+                    yield (i, j)
+    
+    # Implement the Markov Chain Monte Carlo (MCMC) sampling
+    current_score = sum(score_function(data, list(G.predecessors(node)), node) for node in G.nodes())
+    
+    for _ in range(iterations):
+        i, j = random.choice(list(get_neighborhood(G)))
         
-        while len(current_parents) < max_parents:
-            best_parent = None
-            best_bic = float('inf')
+        # Propose a new graph
+        G_new = G.copy()
+        if G_new.has_edge(i, j):
+            G_new.remove_edge(i, j)
+        else:
+            G_new.add_edge(i, j)
             
-            for parent in potential_parents:
-                if parent not in current_parents:
-                    new_parents = current_parents + [parent]
-                    try:
-                        bic = compute_bic(node, new_parents)
-                        
-                        if bic < best_bic:
-                            best_parent = parent
-                            best_bic = bic
-                    except Exception as e:
-                        print(f"Error computing BIC for {node} with parents {new_parents}: {e}")
+        # Check for cycles
+        if nx.is_directed_acyclic_graph(G_new):
+            new_score = sum(score_function(data, list(G_new.predecessors(node)), node) for node in G_new.nodes())
             
-            if best_parent is None or len(current_parents) >= max_parents:
-                break
-            
-            current_parents.append(best_parent)
-            edges.add((best_parent, node))
-    return list(edges)
+            # Accept or reject the new graph
+            if new_score > current_score or random.random() < np.exp(new_score - current_score):
+                G = G_new
+                current_score = new_score
+    
+    # Implement dynamic connectivity
+    dynamic_edges = []
+    for edge in G.edges():
+        source, target = edge
+        correlation = data[source].rolling(window=20).corr(data[target])
+        if correlation.std() > 0.1:  # Threshold for dynamic connectivity
+            dynamic_edges.append(edge)
+    
+    # Add attributes to edges for dynamic connectivity
+    nx.set_edge_attributes(G, {edge: {'dynamic': True} for edge in dynamic_edges})
+    
+    return G
 
 
 
