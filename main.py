@@ -56,12 +56,12 @@ def main():
         preprocess_hcp()
         logger.info("Starting Bayesian Network analysis")
         behavioral_features = [
-            'Subject', 'Age', 'Gender', 'CogFluidComp_Unadj', 'MMSE_Score',
+            'Subject', 'Age', 'Gender', 'CogFluidComp_Unadj', 'CogCrystalComp_Unadj', 'MMSE_Score',
             'NEOFAC_O', 'NEOFAC_C', 'ProcSpeed_Unadj', 'CardSort_Unadj', 'PicVocab_Unadj', 'ReadEng_Unadj'
         ]
 
         hcp_features = [
-            'Subject', 'FS_SubCort_GM_Vol', 'FS_Tot_WM_Vol', 'FS_BrainStem_Vol',
+            'Subject', 'FS_TotCort_GM_Vol', 'FS_SubCort_GM_Vol', 'FS_Total_GM_Vol', 'FS_Tot_WM_Vol', 'FS_BrainStem_Vol',
             'FS_L_Hippo_Vol', 'FS_R_Hippo_Vol', 'FS_L_Amygdala_Vol', 'FS_R_Amygdala_Vol',
             'FS_L_Caudate_Vol', 'FS_R_Caudate_Vol', 'FS_L_Putamen_Vol', 'FS_R_Putamen_Vol',
         ]
@@ -69,16 +69,33 @@ def main():
         categorical_columns = ['Age', 'Gender']
 
         prior_edges = [
-            ('Age', 'CogFluidComp_Unadj'), ('Age', 'MMSE_Score'),
+            ('Age', 'CogFluidComp_Unadj'),
+            ('Age', 'CogCrystalComp_Unadj'),
+            ('Age', 'MMSE_Score'),
             ('Gender', 'CogFluidComp_Unadj'),
+            ('Gender', 'CogCrystalComp_Unadj'),
             ('MMSE_Score', 'CogFluidComp_Unadj'),
+            ('MMSE_Score', 'CogCrystalComp_Unadj'),
+            ('FS_Total_GM_Vol', 'CogFluidComp_Unadj'),
+            ('FS_Total_GM_Vol', 'CogCrystalComp_Unadj'),
             ('FS_Tot_WM_Vol', 'CogFluidComp_Unadj'),
-            ('FS_L_Hippo_Vol', 'CogFluidComp_Unadj'), ('FS_R_Hippo_Vol', 'CogFluidComp_Unadj'),
-            ('FS_L_Amygdala_Vol', 'NEOFAC_O'), ('FS_R_Amygdala_Vol', 'NEOFAC_O'),
-            ('NEOFAC_O', 'CogFluidComp_Unadj'), ('NEOFAC_C', 'CogFluidComp_Unadj'),
-            ('ProcSpeed_Unadj', 'CogFluidComp_Unadj'), ('CardSort_Unadj', 'CogFluidComp_Unadj'),
-            ('ProcSpeed_Unadj', 'MMSE_Score'), ('CardSort_Unadj', 'MMSE_Score'),
-            ('ProcSpeed_Unadj', 'NEOFAC_O'), ('CardSort_Unadj', 'NEOFAC_C'),
+            ('FS_Tot_WM_Vol', 'CogCrystalComp_Unadj'),
+            ('FS_L_Hippo_Vol', 'CogFluidComp_Unadj'),
+            ('FS_R_Hippo_Vol', 'CogFluidComp_Unadj'),
+            ('FS_L_Amygdala_Vol', 'NEOFAC_O'),
+            ('FS_R_Amygdala_Vol', 'NEOFAC_O'),
+            ('NEOFAC_O', 'CogCrystalComp_Unadj'),
+            ('NEOFAC_C', 'CogFluidComp_Unadj'),
+            ('FS_L_Hippo_Vol', 'NEOFAC_O'),
+            ('FS_R_Hippo_Vol', 'NEOFAC_O'),
+            ('ProcSpeed_Unadj', 'CogFluidComp_Unadj'),
+            ('CardSort_Unadj', 'CogFluidComp_Unadj'),
+            ('ProcSpeed_Unadj', 'CogCrystalComp_Unadj'),
+            ('CardSort_Unadj', 'CogCrystalComp_Unadj'),
+            ('ProcSpeed_Unadj', 'MMSE_Score'),
+            ('CardSort_Unadj', 'MMSE_Score'),
+            ('ProcSpeed_Unadj', 'NEOFAC_O'),
+            ('CardSort_Unadj', 'NEOFAC_C'),
         ]
 
         data, categorical_columns, categories = prepare_data(
@@ -93,9 +110,6 @@ def main():
         model = BayesianModel(method='nsl', max_parents=6, iterations=1500, categorical_columns=categorical_columns)
         model.fit(data, prior_edges=prior_edges)
 
-        logger.info("Model fitted successfully")
-        logger.info(f"Network nodes: {model.network.nodes}")
-        logger.info(f"Network edges: {model.network.edges}")
 
         analysis_params = {
             "target_variable": "CogFluidComp_Unadj",
@@ -105,7 +119,7 @@ def main():
             "age_column": "Age",
             "gender_column": "Gender",
             "brain_stem_column": "FS_BrainStem_Vol",
-            "age_groups": {"Young": (22, 35), "Middle": (36, 50), "Old": (51, 100)},
+            "age_groups": {"Young": (0, 1), "Adult": (2, 2), "Middle": (3, 3), "Old": (4, 4)}, 
             "feature_thresholds": {"NEOFAC_O": 0.1, "FS_L_Hippo_Vol": 0.1},
             "analysis_variables": [('FS_L_Amygdala_Vol', 'FS_R_Amygdala_Vol'), ('FS_L_Hippo_Vol', 'FS_R_Hippo_Vol')]
         }
@@ -118,6 +132,7 @@ def main():
             logger.error(f"An error occurred: {str(e)}")
             logger.exception("Exception details:")
 
+        logger.info("Analysis complete.")
 
     except Exception as e:
         logger.error(f"An error occurred: {str(e)}")

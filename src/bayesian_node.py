@@ -2,8 +2,6 @@ import numpy as np
 from typing import List, Tuple, Union, Optional, Dict
 from scipy import stats
 import pandas as pd
-from scipy.stats import norm, gamma, dirichlet, multinomial
-from scipy import stats
 import statsmodels.api as sm
 
 class BayesianNode:
@@ -14,11 +12,15 @@ class BayesianNode:
         self.distribution = distribution
         self.is_categorical = False
         self.categories = None
-        self.transform = None  
-        self.inverse_transform = None  
+        self.transform = None
+        self.inverse_transform = None
         self.fitted = False
         self.children = []
         self.distribution_type = None
+        self.coefficients = None
+        self.intercept = None
+        self.std = None
+        self.mean = None
 
     def __repr__(self):
         return f"BayesianNode(name={self.name}, distribution={self.distribution}, parents={self.parents})"
@@ -74,25 +76,26 @@ class BayesianNode:
         if isinstance(self.distribution, (stats.rv_continuous, stats.rv_discrete)):
             return self.distribution
         elif isinstance(self.distribution, tuple) and len(self.distribution) == 2:
-            # Assume it's (mean, std) for a normal distribution
             return stats.norm(*self.distribution)
         else:
             return self.distribution
 
     def set_categorical(self, categories):
-        """Set the node as categorical and define its categories."""
         self.is_categorical = True
         self.categories = list(categories)
 
     def set_transform(self, transform, inverse_transform):
-        """Set the transformation and its inverse."""
         self.transform = transform
         self.inverse_transform = inverse_transform
 
     def apply_transform(self, data):
-        """Apply transformation if set."""
         if self.transform:
             return self.transform(data)
+        return data
+
+    def apply_inverse_transform(self, data):
+        if self.inverse_transform:
+            return self.inverse_transform(data)
         return data
 
     def get_conditional_mean(self, parent_values):
@@ -100,12 +103,6 @@ class BayesianNode:
             return self.distribution['intercept'] + np.dot(parent_values, self.distribution['beta'])
         else:
             return self.distribution['mean']
-
-    def apply_inverse_transform(self, data):
-        """Apply inverse transformation if set."""
-        if self.inverse_transform:
-            return self.inverse_transform(data)
-        return data
 
     def sample(self, size=1, parent_values=None):
         if self.distribution_type == 'gaussian':
@@ -152,12 +149,13 @@ class BayesianNode:
             X = sm.add_constant(parent_data)
             model = sm.OLS(node_data, X).fit()
             self.distribution = {
-                'intercept': model.params.iloc[0],
-                'beta': model.params[1:],
-                'std': model.resid.std()
+                'intercept': model.params.iloc[0] if not model.params.empty else None,
+                'coefficients': model.params[1:].values if len(model.params) > 1 else None,
+                'std': model.resid.std() if not model.resid.empty else 1e-6
             }
 
         self.fitted = True
+
 
     def log_probability(self, value: Union[float, str], parent_values: Tuple = None) -> float:
         if self.distribution is None:
@@ -204,10 +202,8 @@ class CategoricalNode(BayesianNode):
 
     def fit(self, data, parent_data=None):
         if parent_data is not None:
-            # Handle cases with parents using conditional probability tables
             self._fit_with_parents(data, parent_data)
         else:
-            # Handle cases without parents using a simple categorical distribution
             counts = data.value_counts()
             self.distribution = (counts / counts.sum()).to_dict()
             self.fitted = True
@@ -280,12 +276,9 @@ class CategoricalNode(BayesianNode):
         if parent_values in self.distribution:
             return self.distribution[parent_values]
         else:
-            # If we don't have a distribution for this parent combination, use uniform
             return np.ones(len(self.categories)) / len(self.categories)
 
     def get_conditional_mean(self, parent_values):
-        # For categorical nodes, we don't have a meaningful "mean"
-        # We can return the expected value based on the probabilities
         probs = self.get_conditional_probs(parent_values)
         return np.dot(range(len(self.categories)), probs)
 

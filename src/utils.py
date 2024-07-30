@@ -26,28 +26,34 @@ def make_serializable(obj):
 def calculate_results(network, data: pd.DataFrame, params: Dict[str, Any]) -> Dict:
 
     results = {}
-    
-    results["edge_probabilities"] = network.compute_all_edge_probabilities()
-    results["network_structure"] = network.explain_structure_extended()
-    results["edge_probabilities"] = network.compute_all_edge_probabilities()
-    results["key_relationships"] = network.get_key_relationships()
-    results["feature_importance"] = compute_feature_importance(data, params["target_variable"])
-    results["unexpected_insights"] = get_unexpected_insights(network, params["target_variable"], params["analysis_variables"])
-    results["actionable_insights"] = generate_actionable_insights(network, params["target_variable"], params["feature_thresholds"])
-    results["personality_cognition_relationships"] = analyze_personality_cognition_relationship(data, params["personality_traits"], params["cognitive_measures"])
-    results["age_dependent_relationships"] = analyze_age_dependent_relationships(data, params["age_column"], params["target_variable"])
-    results["practical_implications"] = get_practical_implications(network, params["target_variable"], params["feature_thresholds"])
-    results["age_stratified_analysis"] = perform_age_stratified_analysis(data, params["age_column"], params["target_variable"], params["age_groups"])
-    results["unexpected_findings_explanations"] = explain_unexpected_findings(network, params["target_variable"], params["brain_stem_column"], "FS_L_Amygdala_Vol", "FS_R_Amygdala_Vol")
-    results["brain_stem_relationships"] = analyze_brain_stem_relationship(data, params["brain_stem_column"], params["cognitive_measures"])
-    results["clinical_insights"] = get_clinical_insights(network, params["target_variable"], {"Brain Structure": params["brain_structure_features"], "Personality": params["personality_traits"]})
-    results["age_specific_insights"] = get_age_specific_insights(data, params["age_column"], params["target_variable"])
-    results["gender_specific_insights"] = get_gender_specific_insights(data, params["gender_column"], params["target_variable"])
-    results["key_findings_summary"] = summarize_key_findings(network, params["target_variable"])
-    results["network_structure"] = network.explain_structure_extended()
-    results["summarize_personality_cognition"] = summarize_personality_cognition(results["personality_cognition_relationships"])
-    results["mean_log_likelihood"] = get_mean_log_likelihood(network, data)
-    results["std_log_likelihood"] = get_std_log_likelihood(network, data)
+    try:
+        results["edge_probabilities"] = network.compute_all_edge_probabilities()
+        results["network_structure"] = network.explain_structure_extended()
+        results["edge_probabilities"] = network.compute_all_edge_probabilities()
+        results["key_relationships"] = network.get_key_relationships()
+        results["feature_importance"] = compute_feature_importance(data, params["target_variable"])
+        results["unexpected_insights"] = get_unexpected_insights(network, params["target_variable"], params["analysis_variables"])
+        results["actionable_insights"] = generate_actionable_insights(network, data, params["target_variable"])
+        results["personality_cognition_relationships"] = analyze_personality_cognition_relationship(data, params["personality_traits"], params["cognitive_measures"])
+        results["age_dependent_relationships"] = analyze_age_dependent_relationships(data, params["age_column"], params["target_variable"])
+        results["practical_implications"] = get_practical_implications(network, params["target_variable"], params["feature_thresholds"])
+        results["age_stratified_analysis"] = perform_age_stratified_analysis(data, params["age_column"], params["target_variable"], params["age_groups"])
+        results["unexpected_findings_explanations"] = explain_unexpected_findings(network, params["target_variable"], params["brain_stem_column"], "FS_L_Amygdala_Vol", "FS_R_Amygdala_Vol")
+        results["brain_stem_relationships"] = analyze_brain_stem_relationship(data, params["brain_stem_column"], params["cognitive_measures"])
+        results["clinical_insights"] = get_clinical_insights(network, params["target_variable"], {"Brain Structure": params["brain_structure_features"], "Personality": params["personality_traits"]})
+        results["age_specific_insights"] = get_age_specific_insights(data, params["age_column"], params["target_variable"])
+        results["gender_specific_insights"] = get_gender_specific_insights(data, params["gender_column"], params["target_variable"])
+        results["key_findings_summary"] = summarize_key_findings(network, params["target_variable"])
+        results["network_structure"] = network.explain_structure_extended()
+        results["summarize_personality_cognition"] = summarize_personality_cognition(results["personality_cognition_relationships"])
+        results["mean_log_likelihood"] = get_mean_log_likelihood(network, data)
+        results["std_log_likelihood"] = get_std_log_likelihood(network, data)
+        results["generate_comprehensive_insights"] = generate_comprehensive_insights(network, data, params["target_variable"])
+
+    except Exception as e:
+        print(f"Error in calculate_results: {str(e)}")
+        print(f"Params: {params}")
+        raise
 
     return results
 
@@ -143,19 +149,27 @@ def get_unexpected_insights(network, target_variable, analysis_variables):
     
     return insights
 
-def generate_actionable_insights(network, target_variable: str, feature_thresholds: Dict[str, float]):
-    insights = []
-    sensitivity = network.compute_sensitivity(target_variable)
+def generate_actionable_insights(network, data, target_variable):
+    if not target_variable:
+        raise ValueError("Target variable is empty")
     
-    for feature, threshold in feature_thresholds.items():
-        if sensitivity[feature] > threshold:
-            if "Hippo" in feature:
-                insights.append(f"Focus on memory exercises to potentially improve {target_variable}.")
-            elif feature.startswith("NEOFAC_"):
-                trait = feature.split('_')[1]
-                insights.append(f"Encourage {trait} as part of cognitive training.")
-            elif "BrainStem" in feature:
-                insights.append(f"Consider incorporating balance and coordination exercises to potentially benefit {target_variable}.")
+    insights = []
+    # Identify top influencers
+    sensitivities = network.compute_sensitivity(target_variable)
+    top_influencers = sorted(sensitivities.items(), key=lambda x: abs(x[1]), reverse=True)[:5]
+    
+    for feature, sensitivity in top_influencers:
+        if feature.startswith('FS_'):
+            median = data[feature].median()
+            below_median = data[data[feature] < median][target_variable].mean()
+            above_median = data[data[feature] >= median][target_variable].mean()
+            diff = above_median - below_median
+            insights.append(f"Increasing {feature} from below to above median is associated with a {diff:.2f} change in {target_variable}")
+        elif feature.startswith('NEOFAC_'):
+            trait = feature.split('_')[1]
+            insights.append(f"Focus on improving {trait} trait, as it's strongly associated with {target_variable}")
+        elif feature in ['ProcSpeed_Unadj', 'CardSort_Unadj']:
+            insights.append(f"Cognitive training focusing on {feature} may improve overall {target_variable}")
     
     return insights
 
@@ -390,37 +404,35 @@ def summarize_age_dependent_changes(age_differences: Dict[str, float]) -> str:
             summary += f"- The relationship between {variable} and cognitive ability becomes {direction} with age (Δr = {difference:.2f})\n"
     return summary
 
-def perform_longitudinal_analysis(data, time_column, target_variable, subject_column):
-    subjects = data[subject_column].unique()
+def generate_comprehensive_insights(network, data, target_variable):
+    insights = []
     
-    results = {
-        "overall_trend": {},
-        "individual_trends": {},
-        "rate_of_change": {}
-    }
+    # Check for non-linear relationships
+    for column in data.columns:
+        if column != target_variable:
+            correlation = np.corrcoef(data[column], data[target_variable])[0,1]
+            mutual_info = network.compute_mutual_information(column, target_variable)
+            if abs(correlation) < 0.1 and mutual_info > 0.1:
+                insights.append(f"Potential non-linear relationship between {column} and {target_variable}")
     
-    # Overall trend
-    overall_trend = data.groupby(time_column)[target_variable].mean()
-    results["overall_trend"] = overall_trend.to_dict()
+    # Check for interaction effects
+    for col1 in data.columns:
+        for col2 in data.columns:
+            if col1 != col2 and col1 != target_variable and col2 != target_variable:
+                interaction = data[col1] * data[col2]
+                int_corr = np.corrcoef(interaction, data[target_variable])[0,1]
+                if abs(int_corr) > 0.2:
+                    insights.append(f"Potential interaction effect between {col1} and {col2} on {target_variable}")
     
-    # Individual trends and rate of change
-    for subject in subjects:
-        subject_data = data[data[subject_column] == subject].sort_values(time_column)
-        
-        if len(subject_data) > 1:
-            # Calculate trend
-            trend, _ = np.polyfit(subject_data[time_column], subject_data[target_variable], 1)
-            results["individual_trends"][subject] = trend
-            
-            # Calculate rate of change
-            total_change = subject_data[target_variable].iloc[-1] - subject_data[target_variable].iloc[0]
-            time_span = subject_data[time_column].iloc[-1] - subject_data[time_column].iloc[0]
-            rate_of_change = total_change / time_span
-            results["rate_of_change"][subject] = rate_of_change
+    # Check for threshold effects
+    for column in data.columns:
+        if column != target_variable:
+            quantiles = data[column].quantile([0.25, 0.75])
+            low_corr = np.corrcoef(data[data[column] < quantiles[0.25]][column], 
+                                   data[data[column] < quantiles[0.25]][target_variable])[0,1]
+            high_corr = np.corrcoef(data[data[column] > quantiles[0.75]][column], 
+                                    data[data[column] > quantiles[0.75]][target_variable])[0,1]
+            if abs(high_corr - low_corr) > 0.2:
+                insights.append(f"Potential threshold effect for {column} on {target_variable}")
     
-    # Analyze results
-    avg_rate_of_change = np.mean(list(results["rate_of_change"].values()))
-    results["analysis"] = f"The average rate of change in {target_variable} is {avg_rate_of_change:.2f} units per time point. "
-    results["analysis"] += "This suggests a " + ("positive" if avg_rate_of_change > 0 else "negative") + f" trend in {target_variable} over time."
-    
-    return results
+    return insights

@@ -37,8 +37,6 @@ class BayesianNetwork:
         
         for node_name, node in self.nodes.items():
             parents = self.get_parents(node_name)
-            print(f"Fitting node: {node_name}")
-            print(f"Parents: {parents}")
             
             if node_name in self.categorical_columns:
                 node.set_categorical(data[node_name].unique())
@@ -74,24 +72,22 @@ class BayesianNetwork:
                     print(f"Node {node_name} parameters: {self.parameters[node_name]}")
 
     def _predict_mean(self, node, parent_data):
-        parameters = self.parameters[node]
+        if parent_data is None:
+            return node.mean
         
-        # Check if the node is categorical
-        if node in self.categorical_columns:
-            if 'mode' in parameters:
-                return parameters['mode']
-            else:
-                raise KeyError(f"'mode' key is missing in parameters for categorical node {node}.")
-        
-        # Proceed with linear regression for continuous nodes
-        if 'coefficients' not in parameters:
-            raise KeyError(f"'coefficients' key is missing in parameters for node {node}.")
-        
-        coefficients = parameters['coefficients']
-        intercept = parameters.get('intercept', 0)
-        mean = intercept + np.dot(parent_data, coefficients)
-        
-        return mean
+        parent_data = np.array(parent_data)
+        intercept = node.intercept
+        coefficients = node.coefficients
+
+        # Check if intercept or coefficients are None
+        if intercept is None:
+            logger.warning(f"Node {node.name} has undefined intercept, defaulting to 0")
+            intercept = 0
+        if coefficients is None:
+            logger.warning(f"Node {node.name} has undefined coefficients, defaulting to zero vector")
+            coefficients = np.zeros(parent_data.shape[0])
+
+        return intercept + np.dot(parent_data, coefficients)
 
     def fit(self, data: pd.DataFrame, prior_edges=None):
         self.data = self.preprocess_data(data)
@@ -162,6 +158,7 @@ class BayesianNetwork:
             iterations=self.iterations, 
             prior_edges=prior_edges
         )
+
         
         # Check if learned_edges is None or empty
         if not learned_edges:
@@ -197,7 +194,8 @@ class BayesianNetwork:
         for parent, child in valid_edges:
             self.add_edge(parent, child)
 
-        logger.info(f"Added {len(valid_edges)} edges to the network.")
+        for node in self.nodes:
+            parents = self.get_parents(node)
 
     def add_edge(self, parent_name: str, child_name: str):
         if parent_name not in self.nodes or child_name not in self.nodes:
@@ -304,24 +302,37 @@ class BayesianNetwork:
                     'std': std
                 }
 
-    def compute_log_likelihood(self, data: pd.DataFrame) -> float:
-        log_likelihood = 0
-        for node in self.nodes:
-            parents = self.get_parents(node)
-            node_data = data[node]
-            if parents:
-                parent_data = data[parents]
-                print(f"Node: {node}")
-                print(f"Parents: {parents}")
-                print(f"Parent data shape: {parent_data.shape}")
-            else:
-                parent_data = None
-            mean = self._predict_mean(node, parent_data)
-            std = self.parameters[node].get('std', 1.0)
-            
-            epsilon = 1e-10
-            log_likelihood += np.sum(norm.logpdf(node_data, loc=mean, scale=std + epsilon))
+    def compute_log_likelihood(self, sample):
+        log_likelihood = 0.0
+        for node_name, node in self.nodes.items():
+            parent_data = None
+            if node.parents:
+                try:
+                    parent_data = [sample[parent.name] for parent in node.parents]
+                except KeyError as e:
+                    logger.error(f"Missing parent data for node {node_name}: {e}")
+                    continue
+
+            try:
+                # Ensure mean and std are not None
+                mean = self._predict_mean(node, parent_data)
+                std = node.std
+                
+                if mean is None:
+                    logger.warning(f"Node {node_name} has undefined mean, defaulting to 0")
+                    mean = 0
+                if std is None or std <= 0:
+                    logger.warning(f"Node {node_name} has undefined or non-positive std, defaulting to 1e-6")
+                    std = 1e-6
+                
+                value = sample[node_name]
+                log_likelihood += -0.5 * np.log(2 * np.pi * std ** 2) - (value - mean) ** 2 / (2 * std ** 2)
+            except Exception as e:
+                logger.error(f"Error in computing log likelihood for node {node_name}: {e}")
+                raise
+
         return log_likelihood
+
 
     def save(self, file_path: str):
         network_data = {
@@ -432,13 +443,14 @@ class BayesianNetwork:
         return key_relationships
 
     def compute_sensitivity(self, target_variable: str):
+        if isinstance(target_variable, dict):
+            target_variable = target_variable.get('name', '')  # Assuming the dict has a 'name' key
         if target_variable not in self.nodes:
             raise ValueError(f"Target variable {target_variable} not found in the network.")
         
         sensitivities = {}
         for node_name in self.nodes:
             if node_name != target_variable:
-                # Compute sensitivity based on mutual information
                 mutual_info = self.compute_mutual_information(node_name, target_variable)
                 sensitivities[node_name] = mutual_info
         
