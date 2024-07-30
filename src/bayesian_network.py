@@ -10,6 +10,8 @@ import statsmodels.api as sm
 from scipy.stats import chi2_contingency
 from scipy import stats
 from sklearn.model_selection import KFold
+from sklearn.linear_model import Ridge, Lasso
+
 
 from bayesian_node import BayesianNode, CategoricalNode, Node
 from structure_learning import neurological_structure_learning
@@ -80,15 +82,9 @@ class BayesianNetwork:
         intercept = node.intercept
         coefficients = node.coefficients
 
-        # Check if intercept or coefficients are None
-        if intercept is None:
-            logger.warning(f"Node {node.name} has undefined intercept, defaulting to 0")
-            intercept = 0
-        if coefficients is None:
-            logger.warning(f"Node {node.name} has undefined coefficients, defaulting to zero vector")
-            coefficients = np.zeros(parent_data.shape[0])
-
-        return intercept + np.dot(parent_data, coefficients)
+        # Add small epsilon to avoid division by zero
+        epsilon = 1e-8
+        return intercept + np.dot(parent_data, coefficients) + epsilon
 
     def fit(self, data: pd.DataFrame, prior_edges=None):
         self.data = self.preprocess_data(data)
@@ -108,7 +104,10 @@ class BayesianNetwork:
             else:
                 if parents:
                     parent_data = data[parents]
-                    node.fit(data[node_name], parent_data)
+                    model = Ridge(alpha=0.1)  # Add L2 regularization
+                    model.fit(parent_data, data[node_name])
+                    node.coefficients = model.coef_
+                    node.intercept = model.intercept_
                 else:
                     node.fit(data[node_name])
                 
@@ -472,16 +471,16 @@ class BayesianNetwork:
         from sklearn.metrics import mutual_info_score
         return mutual_info_score(self.data[node1], self.data[node2])
     
-    def cross_validate(self, data, k=5):
+    def cross_validate(self, data: pd.DataFrame, k: int = 5):
         kf = KFold(n_splits=k, shuffle=True, random_state=42)
         log_likelihoods = []
-
+        
         for train_index, test_index in kf.split(data):
             train_data = data.iloc[train_index]
             test_data = data.iloc[test_index]
-
+            
             self.fit(train_data)
-            fold_log_likelihood = np.mean([self.compute_log_likelihood(sample) for _, sample in test_data.iterrows()])
+            fold_log_likelihood = np.mean([self.network.compute_log_likelihood(sample) for _, sample in test_data.iterrows()])
             log_likelihoods.append(fold_log_likelihood)
-
+        
         return np.mean(log_likelihoods), np.std(log_likelihoods)

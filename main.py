@@ -54,16 +54,20 @@ def preprocess_hcp():
 def main():
     try:
         preprocess_hcp()
-        logger.info("Starting Bayesian Network analysis")
+
         behavioral_features = [
             'Subject', 'Age', 'Gender', 'CogFluidComp_Unadj', 'CogCrystalComp_Unadj', 'MMSE_Score',
-            'NEOFAC_O', 'NEOFAC_C', 'ProcSpeed_Unadj', 'CardSort_Unadj', 'PicVocab_Unadj', 'ReadEng_Unadj'
+            'NEOFAC_O', 'NEOFAC_C', 'NEOFAC_E', 'NEOFAC_A', 'NEOFAC_N', 
+            'ProcSpeed_Unadj', 'CardSort_Unadj', 'PicVocab_Unadj', 'ReadEng_Unadj',
+            'PMAT24_A_CR', 'VSPLOT_TC', 'IWRD_TOT'  
         ]
 
         hcp_features = [
             'Subject', 'FS_TotCort_GM_Vol', 'FS_SubCort_GM_Vol', 'FS_Total_GM_Vol', 'FS_Tot_WM_Vol', 'FS_BrainStem_Vol',
             'FS_L_Hippo_Vol', 'FS_R_Hippo_Vol', 'FS_L_Amygdala_Vol', 'FS_R_Amygdala_Vol',
             'FS_L_Caudate_Vol', 'FS_R_Caudate_Vol', 'FS_L_Putamen_Vol', 'FS_R_Putamen_Vol',
+            'FS_L_Thalamus_Vol', 'FS_R_Thalamus_Vol',  
+            'FS_TotSurfArea', 'FS_MeanThickness'  
         ]
 
         categorical_columns = ['Age', 'Gender']
@@ -96,6 +100,13 @@ def main():
             ('CardSort_Unadj', 'MMSE_Score'),
             ('ProcSpeed_Unadj', 'NEOFAC_O'),
             ('CardSort_Unadj', 'NEOFAC_C'),
+            ('FS_L_Thalamus_Vol', 'ProcSpeed_Unadj'),
+            ('FS_R_Thalamus_Vol', 'ProcSpeed_Unadj'),
+            ('FS_TotSurfArea', 'CogFluidComp_Unadj'),
+            ('FS_MeanThickness', 'CogCrystalComp_Unadj'),
+            ('NEOFAC_E', 'CogFluidComp_Unadj'),
+            ('NEOFAC_A', 'MMSE_Score'),
+            ('NEOFAC_N', 'CogFluidComp_Unadj')
         ]
 
         data, categorical_columns, categories = prepare_data(
@@ -107,15 +118,14 @@ def main():
             index='Subject'
         )
 
-        model = BayesianModel(method='nsl', max_parents=6, iterations=1500, categorical_columns=categorical_columns)
+        model = BayesianModel(method='nsl', max_parents=6, iterations=2000, categorical_columns=categorical_columns)
         model.fit(data, prior_edges=prior_edges)
-        
+
         mean_ll, std_ll = model.cross_validate(data)
         print(f"Cross-validated Log-Likelihood: {mean_ll:.2f} (+/- {std_ll:.2f})")
 
         total_ll = sum(model.network.compute_log_likelihood(sample) for _, sample in data.iterrows())
         print(f"Total Log-Likelihood: {total_ll:.2f}")
-
 
         analysis_params = {
             "target_variable": "CogFluidComp_Unadj",

@@ -436,3 +436,30 @@ def generate_comprehensive_insights(network, data, target_variable):
                 insights.append(f"Potential threshold effect for {column} on {target_variable}")
     
     return insights
+
+def analyze_brain_cognitive_correlations(data: pd.DataFrame, brain_features: List[str], cognitive_features: List[str]) -> pd.DataFrame:
+    brain_data = data[brain_features]
+    cognitive_data = data[cognitive_features]
+    return brain_data.corrwith(cognitive_data)
+
+def perform_cognitive_factor_analysis(data: pd.DataFrame, cognitive_features: List[str], n_factors: int = 2) -> Dict:
+    from factor_analyzer import FactorAnalyzer
+    fa = FactorAnalyzer(n_factors=n_factors, rotation=None)
+    fa.fit(data[cognitive_features])
+    return {
+        "loadings": pd.DataFrame(fa.loadings_, columns=[f'Factor{i+1}' for i in range(n_factors)], index=cognitive_features),
+        "variance": fa.get_factor_variance()
+    }
+
+def analyze_age_related_changes(data: pd.DataFrame, age_column: str, target_columns: List[str]) -> Dict:
+    results = {}
+    for col in target_columns:
+        slope, intercept, r_value, p_value, std_err = stats.linregress(data[age_column], data[col])
+        results[col] = {
+            "slope": slope,
+            "intercept": intercept,
+            "r_value": r_value,
+            "p_value": p_value,
+            "std_err": std_err
+        }
+    return results

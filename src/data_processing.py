@@ -1,8 +1,7 @@
 import pandas as pd
 import numpy as np
 from sklearn.impute import SimpleImputer
-from sklearn.preprocessing import StandardScaler
-from sklearn.preprocessing import RobustScaler
+from sklearn.preprocessing import StandardScaler, RobustScaler
 from typing import List, Tuple, Dict
 from scipy import stats
 from scipy.stats import norm
@@ -74,6 +73,15 @@ def simple_outlier_treatment(data: pd.DataFrame, columns: List[str], threshold: 
 
     return data
 
+def detect_and_handle_outliers(data: pd.DataFrame, columns: List[str], threshold: float = 3.0) -> pd.DataFrame:
+    for column in columns:
+        if column in data.columns:
+            mean = data[column].mean()
+            std = data[column].std()
+            outliers = abs(data[column] - mean) > (threshold * std)
+            data.loc[outliers, column] = np.clip(data.loc[outliers, column], mean - threshold * std, mean + threshold * std)
+    return data
+
 def preprocess_data(data: pd.DataFrame, categorical_columns: List[str], index: str = None) -> pd.DataFrame:
     data = data.copy()
     
@@ -90,7 +98,8 @@ def preprocess_data(data: pd.DataFrame, categorical_columns: List[str], index: s
     numeric_columns = data.select_dtypes(include=[np.number]).columns.tolist()
     numeric_columns = [col for col in numeric_columns if col not in categorical_columns]
 
-    data = simple_outlier_treatment(data, numeric_columns)
+    data = detect_and_handle_outliers(data, numeric_columns)
+    #data = simple_outlier_treatment(data, numeric_columns)
     
     # Handle numeric columns
     numeric_imputer = SimpleImputer(strategy='median')
