@@ -11,7 +11,7 @@ from scipy.stats import chi2_contingency
 from scipy import stats
 from sklearn.model_selection import KFold
 from sklearn.linear_model import Ridge, Lasso
-
+from sklearn.linear_model import ElasticNet
 
 from bayesian_node import BayesianNode, CategoricalNode, Node
 from structure_learning import neurological_structure_learning
@@ -22,7 +22,7 @@ logging.basicConfig(level=logging.ERROR)
 logger = logging.getLogger(__name__)
 
 class BayesianNetwork:
-    def __init__(self, method="nsl", max_parents=4, iterations=300, categorical_columns=None):
+    def __init__(self, method="nsl", max_parents=4, iterations=300, categorical_columns=None, target_variable="CogFluidComp_Unadj"):
         self.method = method
         self.max_parents = max_parents
         self.iterations = iterations
@@ -32,6 +32,7 @@ class BayesianNetwork:
         self.data = None
         self.parameters = {}
         self.inference = None
+        self.target_variable = target_variable
 
     def _initialize_parameters(self, data: pd.DataFrame, prior: Dict[str, Any] = None):
         if prior is None:
@@ -104,7 +105,7 @@ class BayesianNetwork:
             else:
                 if parents:
                     parent_data = data[parents]
-                    model = Ridge(alpha=0.1)  # Add L2 regularization
+                    model = ElasticNet(alpha=0.1, l1_ratio=0.5)
                     model.fit(parent_data, data[node_name])
                     node.coefficients = model.coef_
                     node.intercept = model.intercept_
@@ -307,6 +308,9 @@ class BayesianNetwork:
                 }
 
     def compute_log_likelihood(self, sample):
+        if isinstance(sample, pd.DataFrame):
+            return sum(self.compute_log_likelihood(row) for _, row in sample.iterrows())
+        
         log_likelihood = 0.0
         for node_name, node in self.nodes.items():
             parent_data = None
@@ -326,9 +330,6 @@ class BayesianNetwork:
                     mean = self._predict_mean(node, parent_data)
                     std = node.std if node.std is not None else 1e-6
                     value = sample[node_name]
-
-                    # Add debug statements
-                    logger.debug(f"Node {node_name}: mean={mean}, std={std}, value={value}")
 
                     if mean is None:
                         logger.error(f"Mean for node {node_name} is None.")
@@ -453,6 +454,19 @@ class BayesianNetwork:
                 key_relationships[edge] = probability
         return key_relationships
 
+    def predict(self, data):
+        predictions = []
+        for _, sample in data.iterrows():
+            node_predictions = {}
+            for node_name, node in self.nodes.items():
+                parent_data = None
+                if node.parents:
+                    parent_data = np.array([sample[parent.name] for parent in node.parents])
+                mean = self._predict_mean(node, parent_data)
+                node_predictions[node_name] = mean
+            predictions.append(node_predictions[self.target_variable])
+        return np.array(predictions)
+
     def compute_sensitivity(self, target_variable: str):
         if isinstance(target_variable, dict):
             target_variable = target_variable.get('name', '')  # Assuming the dict has a 'name' key
@@ -484,3 +498,4 @@ class BayesianNetwork:
             log_likelihoods.append(fold_log_likelihood)
         
         return np.mean(log_likelihoods), np.std(log_likelihoods)
+    

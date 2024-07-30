@@ -65,9 +65,7 @@ def main():
         hcp_features = [
             'Subject', 'FS_TotCort_GM_Vol', 'FS_SubCort_GM_Vol', 'FS_Total_GM_Vol', 'FS_Tot_WM_Vol', 'FS_BrainStem_Vol',
             'FS_L_Hippo_Vol', 'FS_R_Hippo_Vol', 'FS_L_Amygdala_Vol', 'FS_R_Amygdala_Vol',
-            'FS_L_Caudate_Vol', 'FS_R_Caudate_Vol', 'FS_L_Putamen_Vol', 'FS_R_Putamen_Vol',
-            'FS_L_Thalamus_Vol', 'FS_R_Thalamus_Vol',  
-            'FS_TotSurfArea', 'FS_MeanThickness'  
+            'FS_L_Caudate_Vol', 'FS_R_Caudate_Vol', 'FS_L_Putamen_Vol', 'FS_R_Putamen_Vol'
         ]
 
         categorical_columns = ['Age', 'Gender']
@@ -100,25 +98,30 @@ def main():
             ('CardSort_Unadj', 'MMSE_Score'),
             ('ProcSpeed_Unadj', 'NEOFAC_O'),
             ('CardSort_Unadj', 'NEOFAC_C'),
-            ('FS_L_Thalamus_Vol', 'ProcSpeed_Unadj'),
-            ('FS_R_Thalamus_Vol', 'ProcSpeed_Unadj'),
-            ('FS_TotSurfArea', 'CogFluidComp_Unadj'),
-            ('FS_MeanThickness', 'CogCrystalComp_Unadj'),
             ('NEOFAC_E', 'CogFluidComp_Unadj'),
             ('NEOFAC_A', 'MMSE_Score'),
             ('NEOFAC_N', 'CogFluidComp_Unadj')
         ]
 
-        data, categorical_columns, categories = prepare_data(
+        interaction_features = ['FS_Total_GM_Vol', 'FS_Tot_WM_Vol', 'Age']
+
+        data, categorical_columns = prepare_data(
             behavioral_path=behavioral_path,
             hcp_path=hcp_path,
             behavioral_features=behavioral_features,
             hcp_features=hcp_features,
             categorical_columns=categorical_columns,
-            index='Subject'
+            index='Subject',
+            interaction_features=interaction_features
         )
 
         model = BayesianModel(method='nsl', max_parents=6, iterations=2000, categorical_columns=categorical_columns)
+        param_grid = {
+            'max_parents': [3, 6, 9],
+            'iterations': [1000, 1500, 2500]
+        }
+        best_params, best_score = model.tune_hyperparameters(data, param_grid)
+        print(f"Best parameters: {best_params}, Best score: {best_score}")
         model.fit(data, prior_edges=prior_edges)
 
         mean_ll, std_ll = model.cross_validate(data)

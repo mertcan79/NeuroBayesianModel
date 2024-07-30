@@ -4,6 +4,8 @@ import logging
 from typing import List, Callable, Tuple, Dict, Any
 from scipy.special import logsumexp
 import networkx as nx
+from sklearn.model_selection import GridSearchCV
+
 
 from bayesian_node import BayesianNode, CategoricalNode
 from bayesian_network import BayesianNetwork
@@ -196,4 +198,23 @@ class BayesianModel:
             return np.full(len(parent_values), self.network.parameters[node]['mean'])
         else:
             return parent_values @ self.network.parameters[node]['beta']
+
+    def tune_hyperparameters(self, data, param_grid):
+        def fit_and_score(max_parents, iterations):
+            self.max_parents = max_parents
+            self.iterations = iterations
+            self.fit(data)
+            return self.cross_validate(data)[0]  # Return mean log-likelihood
+
+        grid_search = GridSearchCV(
+            estimator=None,
+            param_grid=param_grid,
+            scoring=fit_and_score,
+            cv=3
+        )
+        grid_search.fit(data)
+        
+        self.max_parents = grid_search.best_params_['max_parents']
+        self.iterations = grid_search.best_params_['iterations']
+        return grid_search.best_params_, grid_search.best_score_
     

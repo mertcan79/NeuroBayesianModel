@@ -82,6 +82,13 @@ def detect_and_handle_outliers(data: pd.DataFrame, columns: List[str], threshold
             data.loc[outliers, column] = np.clip(data.loc[outliers, column], mean - threshold * std, mean + threshold * std)
     return data
 
+
+def add_interaction_terms(data: pd.DataFrame, features: List[str]) -> pd.DataFrame:
+    for i in range(len(features)):
+        for j in range(i+1, len(features)):
+            data[f"{features[i]}_{features[j]}_interaction"] = data[features[i]] * data[features[j]]
+    return data
+
 def preprocess_data(data: pd.DataFrame, categorical_columns: List[str], index: str = None) -> pd.DataFrame:
     data = data.copy()
     
@@ -120,16 +127,17 @@ def preprocess_data(data: pd.DataFrame, categorical_columns: List[str], index: s
     scaler = RobustScaler()
     data[numeric_columns] = scaler.fit_transform(data[numeric_columns])
     
+
     return data
 
 def prepare_data(behavioral_path: str, hcp_path: str,
                   behavioral_features: List[str], hcp_features: List[str],
-                  categorical_columns: List[str], index: str) -> Tuple[pd.DataFrame, List[str], Dict[str, List]]:
+                  categorical_columns: List[str], index: str, interaction_features: List[str]) -> Tuple[pd.DataFrame, List[str], Dict[str, List]]:
     behavioral, hcp = load_data(behavioral_path, hcp_path)
     
     behavioral = optimize_data_types(behavioral)
     hcp = optimize_data_types(hcp)
-
+    
     behavioral, hcp = select_features(behavioral, hcp, behavioral_features, hcp_features)
     
     data = pd.merge(hcp, behavioral, on="Subject")
@@ -141,4 +149,6 @@ def prepare_data(behavioral_path: str, hcp_path: str,
         if col in processed_data.columns:
             categories[col] = sorted(processed_data[col].dropna().unique().tolist())
     
-    return processed_data, categorical_columns, categories
+    processed_data = add_interaction_terms(processed_data, interaction_features)
+
+    return processed_data, categorical_columns

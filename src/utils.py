@@ -343,12 +343,12 @@ def perform_interaction_effects_analysis(data: pd.DataFrame, target: str):
             interactions[f"{col1}_{col2}"] = correlation
     return interactions
 
-def perform_counterfactual_analysis(network, data: pd.DataFrame, interventions: Dict[str, float]):
-    original_prediction = network.predict(data)
+def perform_counterfactual_analysis(network, data: pd.DataFrame, interventions: Dict[str, float], target_variable: str = "CogFluidComp_Unadj"):
+    original_prediction = network.predict(data, target_variable)
     counterfactual_data = data.copy()
     for variable, value in interventions.items():
         counterfactual_data[variable] = value
-    counterfactual_prediction = network.predict(counterfactual_data)
+    counterfactual_prediction = network.predict(counterfactual_data, target_variable)
     return {
         "original_prediction": original_prediction.mean(),
         "counterfactual_prediction": counterfactual_prediction.mean(),
@@ -366,14 +366,14 @@ def perform_mediation_analysis(data: pd.DataFrame, independent: str, mediator: s
         "direct_effect": c_prime
     }
 
-def perform_sensitivity_analysis(network, data: pd.DataFrame, target: str, perturbation: float = 0.1):
+def perform_sensitivity_analysis(network, data: pd.DataFrame, target: str, perturbation: float = 0.1, target_variable:str = 'CogFluidComp_Unadj'):
     results = {}
     for column in data.columns:
         if column != target:
             perturbed_data = data.copy()
             perturbed_data[column] *= (1 + perturbation)
             original_prediction = network.predict(data)
-            perturbed_prediction = network.predict(perturbed_data)
+            perturbed_prediction = network.predict(perturbed_data, target_variable)
             sensitivity = np.mean(np.abs(perturbed_prediction - original_prediction))
             results[column] = sensitivity
     return results
@@ -463,3 +463,16 @@ def analyze_age_related_changes(data: pd.DataFrame, age_column: str, target_colu
             "std_err": std_err
         }
     return results
+
+def cognitive_performance_index(y_true, y_pred):
+    return np.mean(np.abs(y_true - y_pred) / y_true)
+
+def brain_behavior_correlation(brain_data, behavior_data, predictions):
+    brain_corr = np.corrcoef(brain_data, predictions)[0, 1]
+    behavior_corr = np.corrcoef(behavior_data, predictions)[0, 1]
+    return (brain_corr + behavior_corr) / 2
+
+def age_adjusted_prediction_accuracy(y_true, y_pred, ages):
+    errors = np.abs(y_true - y_pred)
+    age_groups = pd.cut(ages, bins=4)
+    return np.mean([errors[age_groups == group].mean() for group in age_groups.categories])
