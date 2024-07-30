@@ -103,7 +103,7 @@ class BayesianNetwork:
         for node_name, node in self.nodes.items():
             parents = self.get_parents(node_name)
             if node_name in self.categorical_columns:
-                mode_value = data[node_name].mode()[0]  # Compute mode for categorical node
+                mode_value = data[node_name].mode()[0]
                 self.parameters[node_name] = {'mode': mode_value}
             else:
                 if parents:
@@ -111,12 +111,15 @@ class BayesianNetwork:
                     node.fit(data[node_name], parent_data)
                 else:
                     node.fit(data[node_name])
-                    self.parameters[node_name] = {
-                        'coefficients': node.coefficients,
-                        'intercept': node.intercept,
-                        'std': node.std,
-                        'mean': node.mean
-                    }
+                
+                self.parameters[node_name] = {
+                    'coefficients': node.coefficients,
+                    'intercept': node.intercept,
+                    'std': node.std if node.std is not None else data[node_name].std(),
+                    'mean': node.mean if node.mean is not None else data[node_name].mean()
+                }
+                node.mean = self.parameters[node_name]['mean']
+                node.std = self.parameters[node_name]['std']
 
 
     def add_node(self, node: 'BayesianNode'):

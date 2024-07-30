@@ -109,12 +109,13 @@ def main():
 
         model = BayesianModel(method='nsl', max_parents=6, iterations=1500, categorical_columns=categorical_columns)
         model.fit(data, prior_edges=prior_edges)
-
+        
         mean_ll, std_ll = model.cross_validate(data)
         print(f"Cross-validated Log-Likelihood: {mean_ll:.2f} (+/- {std_ll:.2f})")
 
-        total_ll = sum(model.compute_log_likelihood(sample) for _, sample in data.iterrows())
+        total_ll = sum(model.network.compute_log_likelihood(sample) for _, sample in data.iterrows())
         print(f"Total Log-Likelihood: {total_ll:.2f}")
+
 
         analysis_params = {
             "target_variable": "CogFluidComp_Unadj",

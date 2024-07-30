@@ -129,7 +129,7 @@ class BayesianModel:
         graph = nx.DiGraph(self.network.edges)
         return list(nx.topological_sort(graph))
 
-    def cross_validate(self, data: pd.DataFrame, num_folds: int = 5) -> float:
+    def cross_validate(self, data: pd.DataFrame, num_folds: int = 5) -> Tuple[float, float]:
         fold_size = len(data) // num_folds
         log_predictive_densities = []
 
@@ -137,15 +137,14 @@ class BayesianModel:
             test_data = data.iloc[i*fold_size:(i+1)*fold_size]
             train_data = pd.concat([data.iloc[:i*fold_size], data.iloc[(i+1)*fold_size:]])
             
-            # Fit the model on training data
             self.fit(train_data)
             
-            # Compute log predictive density for test data
             log_pred_density = self.compute_log_predictive_density(test_data)
             log_predictive_densities.append(log_pred_density)
         
-        # Compute and return the log predictive density
-        return logsumexp(log_predictive_densities) - np.log(num_folds)
+        mean_ll = np.mean(log_predictive_densities)
+        std_ll = np.std(log_predictive_densities)
+        return mean_ll, std_ll
 
     def compute_log_predictive_density(self, data: pd.DataFrame) -> float:
         log_density = 0
