@@ -1,6 +1,5 @@
 import json
 from typing import Dict, Any, Tuple, Callable, List, Optional, Union
-from functools import lru_cache
 import logging
 
 import pandas as pd
@@ -10,6 +9,7 @@ import networkx as nx
 import statsmodels.api as sm
 from scipy.stats import chi2_contingency
 from scipy import stats
+from sklearn.model_selection import KFold
 
 from bayesian_node import BayesianNode, CategoricalNode, Node
 from structure_learning import neurological_structure_learning
@@ -71,10 +71,11 @@ class BayesianNetwork:
                     node.distribution = norm(loc=0, scale=self.parameters[node_name]['std'])
                     print(f"Node {node_name} parameters: {self.parameters[node_name]}")
 
+
     def _predict_mean(self, node, parent_data):
         if parent_data is None:
             return node.mean
-        
+
         parent_data = np.array(parent_data)
         intercept = node.intercept
         coefficients = node.coefficients
@@ -93,6 +94,7 @@ class BayesianNetwork:
         self.data = self.preprocess_data(data)
         self.nodes = self._create_nodes_from_data(data)
         self._learn_structure(data, prior_edges)
+        self.graph = nx.DiGraph(self.edges)
         self._initialize_parameters(data)
         self._fit_nodes(data)
         self.inference = Inference(nodes=self.nodes)
@@ -308,25 +310,32 @@ class BayesianNetwork:
             parent_data = None
             if node.parents:
                 try:
-                    parent_data = [sample[parent.name] for parent in node.parents]
+                    parent_data = np.array([sample[parent.name] for parent in node.parents])
                 except KeyError as e:
                     logger.error(f"Missing parent data for node {node_name}: {e}")
                     continue
 
             try:
-                # Ensure mean and std are not None
-                mean = self._predict_mean(node, parent_data)
-                std = node.std
-                
-                if mean is None:
-                    logger.warning(f"Node {node_name} has undefined mean, defaulting to 0")
-                    mean = 0
-                if std is None or std <= 0:
-                    logger.warning(f"Node {node_name} has undefined or non-positive std, defaulting to 1e-6")
-                    std = 1e-6
-                
-                value = sample[node_name]
-                log_likelihood += -0.5 * np.log(2 * np.pi * std ** 2) - (value - mean) ** 2 / (2 * std ** 2)
+                if node.is_categorical:
+                    prob = node.get_conditional_probs(parent_data)
+                    value = sample[node_name]
+                    log_likelihood += np.log(prob[value] + 1e-10)  # Add small constant to avoid log(0)
+                else:
+                    mean = self._predict_mean(node, parent_data)
+                    std = node.std if node.std is not None else 1e-6
+                    value = sample[node_name]
+
+                    # Add debug statements
+                    logger.debug(f"Node {node_name}: mean={mean}, std={std}, value={value}")
+
+                    if mean is None:
+                        logger.error(f"Mean for node {node_name} is None.")
+                        mean = 0  # Default value or handle as appropriate for your use case
+                    if std is None:
+                        logger.error(f"Standard deviation for node {node_name} is None.")
+                        std = 1e-6  # Small positive value to avoid zero std
+
+                    log_likelihood += norm.logpdf(value, loc=mean, scale=std)
             except Exception as e:
                 logger.error(f"Error in computing log likelihood for node {node_name}: {e}")
                 raise
@@ -459,3 +468,17 @@ class BayesianNetwork:
     def compute_mutual_information(self, node1: str, node2: str):
         from sklearn.metrics import mutual_info_score
         return mutual_info_score(self.data[node1], self.data[node2])
+    
+    def cross_validate(self, data, k=5):
+        kf = KFold(n_splits=k, shuffle=True, random_state=42)
+        log_likelihoods = []
+
+        for train_index, test_index in kf.split(data):
+            train_data = data.iloc[train_index]
+            test_data = data.iloc[test_index]
+
+            self.fit(train_data)
+            fold_log_likelihood = np.mean([self.compute_log_likelihood(sample) for _, sample in test_data.iterrows()])
+            log_likelihoods.append(fold_log_likelihood)
+
+        return np.mean(log_likelihoods), np.std(log_likelihoods)

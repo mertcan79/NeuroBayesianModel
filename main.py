@@ -110,6 +110,11 @@ def main():
         model = BayesianModel(method='nsl', max_parents=6, iterations=1500, categorical_columns=categorical_columns)
         model.fit(data, prior_edges=prior_edges)
 
+        mean_ll, std_ll = model.cross_validate(data)
+        print(f"Cross-validated Log-Likelihood: {mean_ll:.2f} (+/- {std_ll:.2f})")
+
+        total_ll = sum(model.compute_log_likelihood(sample) for _, sample in data.iterrows())
+        print(f"Total Log-Likelihood: {total_ll:.2f}")
 
         analysis_params = {
             "target_variable": "CogFluidComp_Unadj",
@@ -119,7 +124,7 @@ def main():
             "age_column": "Age",
             "gender_column": "Gender",
             "brain_stem_column": "FS_BrainStem_Vol",
-            "age_groups": {"Young": (0, 1), "Adult": (2, 2), "Middle": (3, 3), "Old": (4, 4)}, 
+            "age_groups": {"Young": (0, 1), "Adult": (1, 2), "Middle": (2, 3), "Old": (3, 4)}, 
             "feature_thresholds": {"NEOFAC_O": 0.1, "FS_L_Hippo_Vol": 0.1},
             "analysis_variables": [('FS_L_Amygdala_Vol', 'FS_R_Amygdala_Vol'), ('FS_L_Hippo_Vol', 'FS_R_Hippo_Vol')]
         }

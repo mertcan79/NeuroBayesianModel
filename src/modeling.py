@@ -62,7 +62,7 @@ class BayesianModel:
         return analysis
 
     def log_likelihood(self, data: pd.DataFrame) -> float:
-        return self.network._compute_log_likelihood(data)
+        return self.network.compute_log_likelihood(data)
 
     @property
     def nodes(self):

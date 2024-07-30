@@ -2,6 +2,7 @@ import pandas as pd
 import numpy as np
 from sklearn.impute import SimpleImputer
 from sklearn.preprocessing import StandardScaler
+from sklearn.preprocessing import RobustScaler
 from typing import List, Tuple, Dict
 from scipy import stats
 from scipy.stats import norm
@@ -32,6 +33,12 @@ def transform_skewed_features(data: pd.DataFrame, threshold: float = 0.5) -> pd.
         skewness = stats.skew(data[col].dropna())
         if abs(skewness) > threshold:
             data[col] = np.log1p(data[col] - data[col].min())
+    return data
+
+def normalize_skewed_features(data, columns, threshold=1):
+    for col in columns:
+        if abs(stats.skew(data[col])) > threshold:
+            data[col] = stats.boxcox(data[col] - data[col].min() + 1)[0]
     return data
 
 def simple_outlier_treatment(data: pd.DataFrame, columns: List[str], threshold: float = 1.5) -> pd.DataFrame:
@@ -98,9 +105,10 @@ def preprocess_data(data: pd.DataFrame, categorical_columns: List[str], index: s
             categorical_imputer = SimpleImputer(strategy='most_frequent')
             data[[col]] = categorical_imputer.fit_transform(data[[col]])
 
-    data = transform_skewed_features(data)
+    #data = transform_skewed_features(data)
+    data = normalize_skewed_features(data, numeric_columns)
     # Apply StandardScaler to numeric columns
-    scaler = StandardScaler()
+    scaler = RobustScaler()
     data[numeric_columns] = scaler.fit_transform(data[numeric_columns])
     
     return data
