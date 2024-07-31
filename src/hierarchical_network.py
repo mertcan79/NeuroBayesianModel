@@ -204,11 +204,11 @@ class HierarchicalBayesianNetwork:
 
         log_likelihoods = []
         for train_data, test_data in split_data(data, k):
-            self.fit(train_data, prior_edges=self.prior_edges)
-            fold_log_likelihood = self.compute_log_likelihood(test_data)
-            log_likelihoods.append(fold_log_likelihood)
+            self.fit(train_data)
+            log_likelihood = self.compute_log_likelihood(test_data)
+            log_likelihoods.append(log_likelihood)
 
-        return np.mean(log_likelihoods), np.std(log_likelihoods)
+        return np.mean(log_likelihoods)
 
     def get_target_variable(self):
         return self.target_variable
