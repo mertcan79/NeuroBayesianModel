@@ -97,6 +97,10 @@ def main():
             "analysis_variables": [("FS_L_Amygdala_Vol", "FS_R_Amygdala_Vol"), ("FS_L_Hippo_Vol", "FS_R_Hippo_Vol")]
         }
 
+
+        filtered_prior_edges = [(parent, child) for parent, child in prior_edges 
+                                if parent != target_variable and child != target_variable]
+
         data, categorical_columns = prepare_data(
             behavioral_path=behavioral_path,
             hcp_path=hcp_path,
@@ -108,23 +112,25 @@ def main():
         )
 
         model = HierarchicalBayesianNetwork(
-            num_features=len(data.columns),
-            max_parents=3,
-            iterations=500,
+            num_features=len(data.columns) - 1,  # Subtract 1 to exclude the target variable
+            max_parents=5,
+            iterations=1500,
             categorical_columns=categorical_columns,
-            target_variable=target_variable
+            target_variable=target_variable,
+            prior_edges=filtered_prior_edges
         )
-
-        filtered_prior_edges = [(parent, child) for parent, child in prior_edges 
-                                if parent != target_variable and child != target_variable]
         
         logger.info("Fitting Bayesian Network")
-        model.fit(data, prior_edges=filtered_prior_edges)
+        model.fit(data)
         logger.success("Bayesian Network fitting completed successfully")
 
-        logger.info("Computing edge probabilities")
-        edge_probabilities = model.compute_all_edge_probabilities()
-        logger.info(f"Edge probabilities: {edge_probabilities}")
+        logger.info("Computing edge weights")
+        edge_weights = model.compute_all_edge_probabilities()
+        for edge, stats in edge_weights.items():
+            logger.info(f"Edge {edge}:")
+            logger.info(f"  Weight: {stats['weight']:.3f} ± {stats['std_dev']:.3f}")
+            logger.info(f"  95% CI: ({stats['95%_CI'][0]:.3f}, {stats['95%_CI'][1]:.3f})")
+            logger.info(f"  P(important): {stats['P(important)']:.3f}")
 
         logger.info("Explaining network structure")
         structure_explanation = model.explain_structure_extended()
@@ -155,7 +161,7 @@ def main():
         logger.info(f"Interaction effects: {interaction_effects}")
 
         logger.info("Performing counterfactual analysis")
-        counterfactual_analysis = model.perform_counterfactual_analysis(params["age_column"], target_variable)
+        counterfactual_analysis = model.perform_counterfactual_analysis({params["age_column"]: 30}, target_variable)
         logger.info(f"Counterfactual analysis: {counterfactual_analysis}")
 
         logger.info("Performing sensitivity analysis")
@@ -163,14 +169,47 @@ def main():
         logger.info(f"Sensitivity analysis: {sensitivity_analysis}")
 
         logger.info("Analyzing brain-cognitive correlations")
-        brain_cognitive_correlations = model.analyze_brain_cognitive_correlations(
-            params["brain_structure_features"], params["cognitive_measures"]
-        )
-        logger.info(f"Brain-cognitive correlations: {brain_cognitive_correlations}")
+
+        # Non-linear Model
+        model.fit_nonlinear(data, target_variable)
+        logger.info("Non-linear model fitted")
+
+        # Model Comparison
+        models = {
+            'linear': model.model,
+            'nonlinear': model.nonlinear_cognitive_model
+        }
+
+        comparison_results = model.bayesian_model_comparison(data, models)
+        logger.info(f"Model Comparison Results: {comparison_results}")
 
         logger.info("Analyzing age-related changes")
         age_related_changes = model.analyze_age_related_changes(params["age_column"], params["cognitive_measures"])
         logger.info(f"Age-related changes: {age_related_changes}")
+
+        logger.info("Comparing performance to other models")
+        performance_comparison = model.compare_performance(model, data, target_variable)
+        logger.info(f"Compared performance {performance_comparison}")
+
+        #logger.info("Getting practical implications")
+        #practical_implications = model.get_practical_implications(model, target_variable, params["feature_thresholds"])
+        #logger.info(f"Practical implications: {practical_implications}")
+
+        #logger.info("Performing age stratified analysis")
+        #age_stratified_results = model.perform_age_stratified_analysis(data, params["age_column"], target_variable, params["age_groups"])
+        #logger.info(f"Age stratified analysis results: {age_stratified_results}")
+
+        #logger.info("Getting clinical insights")
+        #clinical_insights = model.get_clinical_insights(model, target_variable, {
+        #    "Brain Structure": params["brain_structure_features"],
+        #    "Personality": params["personality_traits"],
+        #})
+        #logger.info(f"Clinical insights: {clinical_insights}")
+
+        #logger.info("Generating comprehensive insights")
+        #comprehensive_insights = model.generate_comprehensive_insights(model, data, target_variable)
+        #logger.info(f"Comprehensive insights: {comprehensive_insights}")
+
 
         logger.info("Analysis complete.")
 
