@@ -5,12 +5,12 @@ import pandas as pd
 import numpy as np
 from src.data_processing import prepare_data
 import warnings
-from src.tasks import (fit_model, compute_edge_weights, explain_structure, get_key_relationships, compute_sensitivities, 
-                       bayesian_model_comparison, cross_validate, get_clinical_implications, analyze_age_dependent_relationships, 
-                       perform_interaction_effects_analysis, perform_counterfactual_analysis, analyze_age_related_changes, 
+from src.tasks import (fit_model, compute_edge_weights, explain_structure, get_key_relationships, compute_sensitivities,
+                       bayesian_model_comparison, cross_validate, get_clinical_implications, analyze_age_dependent_relationships,
+                       perform_interaction_effects_analysis, perform_counterfactual_analysis, analyze_age_related_changes,
                        perform_sensitivity_analysis, fit_nonlinear_model, compare_performance, fit_simple
                        )
-                        
+
 warnings.filterwarnings("ignore", category=UserWarning)
 
 load_dotenv()
@@ -36,7 +36,6 @@ behavioral_path_processed = os.path.join(
 hcp_path = os.path.join(data_path, "hcp_freesurfer.csv")
 hcp_path_processed = os.path.join(processed_data_path, "hcp_freesurfer.csv")
 
-
 def preprocess_hcp():
     def map_age_to_category(age_str):
         bins = ["22-25", "26-30", "31-35", "36+"]
@@ -58,19 +57,17 @@ def preprocess_hcp():
     hcp_data.to_csv(hcp_path_processed, index=False)
 
 def test_tasks(model_data, data_dict, target_variable, params):
-    """Test all tasks to ensure they run without errors."""
     tasks_to_test = [
+        (cross_validate, (model_data, data_dict)),
         (compute_edge_weights, (model_data,)),
         (explain_structure, (model_data,)),
         (get_key_relationships, (model_data,)),
         (compute_sensitivities, (model_data, target_variable)),
-        (cross_validate, (model_data, data_dict)),
         (get_clinical_implications, (model_data,)),
         (analyze_age_dependent_relationships, (model_data, data_dict, params["age_column"], target_variable)),
         (perform_interaction_effects_analysis, (model_data, target_variable)),
         (perform_counterfactual_analysis, (model_data, data_dict, {params["age_column"]: 30}, target_variable)),
         (perform_sensitivity_analysis, (model_data, target_variable)),
-        #(fit_nonlinear_model, (model_data, data_dict, target_variable)),
         (fit_simple, (model_data, data_dict, target_variable)),
         (bayesian_model_comparison, (model_data, data_dict, {'linear': model_data})),
         (analyze_age_related_changes, (model_data, data_dict, params["age_column"], params["cognitive_measures"])),
@@ -201,21 +198,19 @@ def main():
             interaction_features=interaction_features,
         )
 
-        filtered_prior_edges = [(parent, child) for parent, child in prior_edges 
+        filtered_prior_edges = [(parent, child) for parent, child in prior_edges
                                 if parent != target_variable and child != target_variable]
 
-        #data_dict = data.to_dict()
-        data_subset = data.sample(n=min(300, len(data)))  # Use at most 1000 samples
+        data_subset = data.sample(n=min(300, len(data)))
         data_dict = data_subset.to_dict()
 
         logger.info("Fitting Bayesian Network")
-        
+
         model_data_future = fit_model.delay(data_dict, categorical_columns, target_variable, filtered_prior_edges)
         model_data = model_data_future.get()
 
         logger.success("Bayesian Network fitting completed successfully")
 
-        # Test all tasks before proceeding with the full analysis
         logger.info("Testing all tasks")
         if test_tasks(model_data, data_dict, target_variable, params):
             logger.success("All tasks passed the test")
@@ -256,7 +251,6 @@ def main():
         logger.info("Fitting non-linear model")
         nonlinear_model_data_future = fit_nonlinear_model.delay(model_data, data_dict, target_variable)
 
-        # Retrieve and log results
         edge_weights = edge_weights_future.get()
         for edge, stats in edge_weights.items():
             logger.info(f"Edge {edge}:")
@@ -294,7 +288,6 @@ def main():
         nonlinear_model_data = nonlinear_model_data_future.get()
         logger.info("Non-linear model fitted")
 
-        # Model Comparison
         models = {
             'linear': model_data,
             'nonlinear': nonlinear_model_data

@@ -1,24 +1,43 @@
-from sklearn.linear_model import LinearRegression
-from sklearn.metrics import mean_squared_error, r2_score
+import numpy as np
+import pandas as pd
 
+def perform_age_stratified_analysis(data, age_column, target_variable, age_groups):
+    """
+    Perform age-stratified analysis on the data.
 
-def compare_performance(model, data, target_variable):
-    X = data.drop(columns=[target_variable])
-    y = data[target_variable]
+    Args:
+        data (pd.DataFrame): Input data.
+        age_column (str): Column containing age information.
+        target_variable (str): The target variable to analyze.
+        age_groups (dict): Dictionary of age groups and their corresponding ranges.
 
-    # Your model's performance
-    y_pred_model = model.predict(data)
-    mse_model = mean_squared_error(y, y_pred_model)
-    r2_model = r2_score(y, y_pred_model)
+    Returns:
+        dict: Dictionary containing the results of the analysis.
+    """
+    results = {}
+    for group, (min_age, max_age) in age_groups.items():
+        group_data = data[
+            (data[age_column] >= min_age) & (data[age_column] <= max_age)
+        ]
+        results[group] = {
+            "correlation": group_data.corr()[target_variable].to_dict(),
+            "mean": group_data.mean().to_dict(),
+            "std": group_data.std().to_dict(),
+        }
+    return results
 
-    # Linear regression performance
-    lr = LinearRegression()
-    lr.fit(X, y)
-    y_pred_lr = lr.predict(X)
-    mse_lr = mean_squared_error(y, y_pred_lr)
-    r2_lr = r2_score(y, y_pred_lr)
+def analyze_brain_cognitive_correlations(data, brain_features, cognitive_features):
+    """
+    Analyze the correlations between brain features and cognitive features.
 
-    return {
-        "NeuroBayesianModel": {"MSE": mse_model, "R2": r2_model},
-        "Linear Regression": {"MSE": mse_lr, "R2": r2_lr},
-    }
+    Args:
+        data (pd.DataFrame): Input data.
+        brain_features (list): List of brain features.
+        cognitive_features (list): List of cognitive features.
+
+    Returns:
+        pd.Series: Series containing the correlations between brain features and cognitive features.
+    """
+    brain_data = data[brain_features]
+    cognitive_data = data[cognitive_features]
+    return brain_data.corrwith(cognitive_data, method="pearson").dropna()
