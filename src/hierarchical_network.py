@@ -8,10 +8,24 @@ from jax import random
 import logging
 from numpyro.diagnostics import split_gelman_rubin
 
-from insights import perform_age_stratified_analysis, analyze_brain_cognitive_correlations
-from validation import cross_validate_bayesian, compute_mutual_information_bayesian
-from model_utils import simple_linear_model, nonlinear_cognitive_model
-
+from insights import (
+    perform_age_stratified_analysis,
+    analyze_brain_cognitive_correlations,
+    analyze_age_related_changes,
+    perform_interaction_effects_analysis
+)
+from validation import (
+    cross_validate_bayesian,
+    compute_mutual_information_bayesian,
+    compare_performance,
+    bayesian_model_comparison
+)
+from model_utils import (
+    simple_linear_model,
+    nonlinear_cognitive_model,
+    perform_sensitivity_analysis,
+    perform_counterfactual_analysis
+)
 logger = logging.getLogger(__name__)
 
 class HierarchicalBayesianNetwork:
@@ -153,7 +167,7 @@ class HierarchicalBayesianNetwork:
                 'sigma': self.samples['sigma'].mean(),
                 'edge_weights': self.edge_weights
             }
-            rng_key = random.PRNGKey(0)
+
             y_hat = self.model(params, X_tensor, None)
 
             return y_hat
@@ -431,6 +445,90 @@ class HierarchicalBayesianNetwork:
         mcmc.run(random.PRNGKey(0), X, y)
         self.samples = mcmc.get_samples()
 
+    def analyze_age_related_changes(self, age_column, cognitive_measures, age_groups=None):
+        """
+        Analyze age-related changes in cognitive measures.
+
+        Args:
+            age_column (str): Name of the column containing age information.
+            cognitive_measures (list): List of cognitive measures to analyze.
+            age_groups (dict, optional): Dictionary of age groups and their ranges.
+
+        Returns:
+            dict: Analysis results for each cognitive measure.
+        """
+        return analyze_age_related_changes(self.data, age_column, cognitive_measures, age_groups)
+
+    def perform_interaction_effects_analysis(self, target_variable, predictors, interaction_terms):
+        """
+        Analyze interaction effects between predictors on the target variable.
+
+        Args:
+            target_variable (str): Name of the target variable.
+            predictors (list): List of predictor variables.
+            interaction_terms (list): List of tuples representing interaction terms.
+
+        Returns:
+            pd.DataFrame: Summary of interaction effects.
+        """
+        return perform_interaction_effects_analysis(self.data, target_variable, predictors, interaction_terms)
+
+    def perform_sensitivity_analysis(self, target_variable, features, num_samples=1000):
+        """
+        Perform sensitivity analysis to assess the impact of features on the target variable.
+
+        Args:
+            target_variable (str): Name of the target variable.
+            features (list): List of features to analyze.
+            num_samples (int): Number of samples for Monte Carlo simulation.
+
+        Returns:
+            pd.DataFrame: Sensitivity indices for each feature.
+        """
+        return perform_sensitivity_analysis(self, self.data, target_variable, features, num_samples)
+
+    def perform_counterfactual_analysis(self, target_variable, interventions, num_samples=1000):
+        """
+        Perform counterfactual analysis to assess the impact of interventions on the target variable.
+
+        Args:
+            target_variable (str): Name of the target variable.
+            interventions (dict): Dictionary of interventions to apply.
+            num_samples (int): Number of samples for uncertainty estimation.
+
+        Returns:
+            dict: Counterfactual effects for each intervention.
+        """
+        return perform_counterfactual_analysis(self, self.data, target_variable, interventions, num_samples)
+
+    def compare_performance(self, other_models, test_size=0.2, random_state=42):
+        """
+        Compare the performance of this model with other models.
+
+        Args:
+            other_models (dict): Dictionary of other model objects.
+            test_size (float): Proportion of data to use for testing.
+            random_state (int): Random state for reproducibility.
+
+        Returns:
+            pd.DataFrame: Performance metrics for each model.
+        """
+        all_models = {'HierarchicalBayesianNetwork': self, **other_models}
+        return compare_performance(all_models, self.data, self.target_variable, test_size, random_state)
+
+    def bayesian_model_comparison(self, other_models):
+        """
+        Perform Bayesian model comparison with other models.
+
+        Args:
+            other_models (dict): Dictionary of other fitted Bayesian model objects.
+
+        Returns:
+            pd.DataFrame: Model comparison metrics.
+        """
+        all_models = {'HierarchicalBayesianNetwork': self, **other_models}
+        return bayesian_model_comparison(all_models, self.data, self.target_variable)
+
     def fit_nonlinear(self, data, target_variable):
         """
         Fit a nonlinear cognitive model to the data.
@@ -443,10 +541,10 @@ class HierarchicalBayesianNetwork:
         y = data[target_variable].values
 
         kernel = NUTS(nonlinear_cognitive_model)
-        mcmc = MCMC(kernel, num_warmup=50, num_samples=100)
+        mcmc = MCMC(kernel, num_warmup=50, num_samples=50)
 
         for i in range(10):  # Check convergence every 50 samples
-            mcmc.run(random.PRNGKey(i), X, y, num_samples=50)
+            mcmc.run(random.PRNGKey(i), X, y)
             samples = mcmc.get_samples()
             r_hat = split_gelman_rubin(samples)
             if all(r < 1.1 for r in r_hat.values()):

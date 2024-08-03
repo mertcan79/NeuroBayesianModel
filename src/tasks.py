@@ -6,7 +6,6 @@ import json
 import jax
 
 from celery.utils.log import get_task_logger
-from celery.exceptions import MaxRetriesExceededError
 
 logger = get_task_logger(__name__)
 
@@ -157,28 +156,6 @@ def cross_validate(self, model_data, data_dict):
         return convert_to_serializable(result)
     except Exception as e:
         logger.error(f"Error in cross_validate: {str(e)}")
-        logger.exception("Exception details:")
-        raise self.retry(exc=e)
-
-@app.task(bind=True, max_retries=3, default_retry_delay=300)
-def get_clinical_implications(self, model_data):
-    try:
-        model = reconstruct_model(model_data)
-        return convert_to_serializable(model.get_clinical_implications())
-    except Exception as e:
-        logger.error(f"Error in get_clinical_implications: {str(e)}")
-        logger.exception("Exception details:")
-        raise self.retry(exc=e)
-
-@app.task(bind=True, max_retries=3, default_retry_delay=300)
-def analyze_age_dependent_relationships(self, model_data, data_dict, age_column, target_variable):
-    try:
-        model = reconstruct_model(model_data)
-        data = pd.DataFrame(data_dict)
-        result = model.analyze_age_dependent_relationships(age_column, target_variable)
-        return convert_to_serializable(result)
-    except Exception as e:
-        logger.error(f"Error in analyze_age_dependent_relationships: {str(e)}")
         logger.exception("Exception details:")
         raise self.retry(exc=e)
 

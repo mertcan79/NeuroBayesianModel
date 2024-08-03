@@ -6,7 +6,7 @@ import numpy as np
 from src.data_processing import prepare_data
 import warnings
 from src.tasks import (fit_model, compute_edge_weights, explain_structure, get_key_relationships, compute_sensitivities,
-                       bayesian_model_comparison, cross_validate, get_clinical_implications, analyze_age_dependent_relationships,
+                       bayesian_model_comparison, cross_validate,
                        perform_interaction_effects_analysis, perform_counterfactual_analysis, analyze_age_related_changes,
                        perform_sensitivity_analysis, fit_nonlinear_model, compare_performance, fit_simple
                        )
@@ -63,8 +63,6 @@ def test_tasks(model_data, data_dict, target_variable, params):
         (explain_structure, (model_data,)),
         (get_key_relationships, (model_data,)),
         (compute_sensitivities, (model_data, target_variable)),
-        (get_clinical_implications, (model_data,)),
-        (analyze_age_dependent_relationships, (model_data, data_dict, params["age_column"], target_variable)),
         (perform_interaction_effects_analysis, (model_data, target_variable)),
         (perform_counterfactual_analysis, (model_data, data_dict, {params["age_column"]: 30}, target_variable)),
         (perform_sensitivity_analysis, (model_data, target_variable)),
@@ -209,6 +207,17 @@ def main():
         model_data_future = fit_model.delay(data_dict, categorical_columns, target_variable, filtered_prior_edges)
         model_data = model_data_future.get()
 
+        logger.info("Fitting non-linear model")
+        nonlinear_model_data_future = fit_nonlinear_model.delay(model_data, data_dict, target_variable)
+
+        nonlinear_model_data = nonlinear_model_data_future.get()
+        logger.info("Non-linear model fitted")
+
+        models = {
+            'linear': model_data,
+            'nonlinear': nonlinear_model_data
+        }
+
         logger.success("Bayesian Network fitting completed successfully")
 
         logger.info("Testing all tasks")
@@ -233,12 +242,6 @@ def main():
         logger.info("Performing cross-validation")
         cross_validation_future = cross_validate.delay(model_data, data_dict)
 
-        logger.info("Getting clinical implications")
-        clinical_implications_future = get_clinical_implications.delay(model_data)
-
-        logger.info("Analyzing age-dependent relationships")
-        age_dependent_relationships_future = analyze_age_dependent_relationships.delay(model_data, data_dict, params["age_column"], target_variable)
-
         logger.info("Performing interaction effects analysis")
         interaction_effects_future = perform_interaction_effects_analysis.delay(model_data, target_variable)
 
@@ -248,8 +251,14 @@ def main():
         logger.info("Performing sensitivity analysis")
         sensitivity_analysis_future = perform_sensitivity_analysis.delay(model_data, target_variable)
 
-        logger.info("Fitting non-linear model")
-        nonlinear_model_data_future = fit_nonlinear_model.delay(model_data, data_dict, target_variable)
+        logger.info("Performing Bayesian model comparison")
+        comparison_results_future = bayesian_model_comparison.delay(model_data, data_dict, models)
+
+        logger.info("Analyzing age-related changes")
+        age_related_changes_future = analyze_age_related_changes.delay(model_data, data_dict, params["age_column"], params["cognitive_measures"])
+
+        logger.info("Comparing performance to other models")
+        performance_comparison_future = compare_performance.delay(model_data, data_dict, target_variable)
 
         edge_weights = edge_weights_future.get()
         for edge, stats in edge_weights.items():
@@ -270,12 +279,6 @@ def main():
         mean_ll, std_ll = cross_validation_future.get()
         logger.info(f"Cross-validation results: Mean log-likelihood = {mean_ll:.2f}, Std = {std_ll:.2f}")
 
-        clinical_implications = clinical_implications_future.get()
-        logger.info(f"Clinical implications: {clinical_implications}")
-
-        age_dependent_relationships = age_dependent_relationships_future.get()
-        logger.info(f"Age-dependent relationships: {age_dependent_relationships}")
-
         interaction_effects = interaction_effects_future.get()
         logger.info(f"Interaction effects: {interaction_effects}")
 
@@ -284,23 +287,6 @@ def main():
 
         sensitivity_analysis = sensitivity_analysis_future.get()
         logger.info(f"Sensitivity analysis: {sensitivity_analysis}")
-
-        nonlinear_model_data = nonlinear_model_data_future.get()
-        logger.info("Non-linear model fitted")
-
-        models = {
-            'linear': model_data,
-            'nonlinear': nonlinear_model_data
-        }
-
-        logger.info("Performing Bayesian model comparison")
-        comparison_results_future = bayesian_model_comparison.delay(model_data, data_dict, models)
-
-        logger.info("Analyzing age-related changes")
-        age_related_changes_future = analyze_age_related_changes.delay(model_data, data_dict, params["age_column"], params["cognitive_measures"])
-
-        logger.info("Comparing performance to other models")
-        performance_comparison_future = compare_performance.delay(model_data, data_dict, target_variable)
 
         comparison_results = comparison_results_future.get()
         logger.info(f"Model Comparison Results: {comparison_results}")
