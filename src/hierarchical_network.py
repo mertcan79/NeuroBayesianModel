@@ -177,7 +177,6 @@ class HierarchicalBayesianNetwork:
 
         return self.samples
 
-
     def predict(self, X):
         """
         Predict the target variable for new data.
