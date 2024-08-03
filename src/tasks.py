@@ -7,6 +7,9 @@ import jax.numpy as jnp
 from jax import Array
 import jax
 
+from celery.utils.log import get_task_logger
+
+logger = get_task_logger(__name__)
 
 app = Celery('NeuroBayesianModel',
              broker='redis://localhost:6379/0',
@@ -19,6 +22,18 @@ app.conf.update(
     timezone='UTC',
     enable_utc=True,
 )
+
+app.conf.update(
+    worker_prefetch_multiplier=1,
+    task_acks_late=True,
+    task_time_limit=3600,  
+    task_soft_time_limit=3540,  
+)
+
+app.conf.task_routes = {
+    'compute_intensive_task': {'queue': 'compute'},
+    'io_intensive_task': {'queue': 'io'},
+}
 
 def convert_to_serializable(obj):
     if isinstance(obj, (np.ndarray, jax.numpy.ndarray)):
@@ -76,33 +91,43 @@ def reconstruct_model(model_data):
 
 @app.task
 def fit_model(data_dict, categorical_columns, target_variable, prior_edges):
-    data = pd.DataFrame(data_dict)
-    model = HierarchicalBayesianNetwork(
-        num_features=len(data.columns) - 1,
-        max_parents=3,
-        iterations=750,
-        categorical_columns=categorical_columns,
-        target_variable=target_variable,
-        prior_edges=prior_edges
-    )
-    model.fit(data)
-    
-    return convert_to_serializable({
-        'samples': model.samples,
-        'edge_weights': model.edge_weights,
-        'data': model.data.to_dict(),
-        'categorical_columns': model.categorical_columns,
-        'target_variable': model.target_variable,
-        'prior_edges': model.prior_edges,
-        'num_features': model.num_features
-    })
+    try:
+        data = pd.DataFrame(data_dict)
+        logger.info(f"Creating HierarchicalBayesianNetwork with {len(data.columns)} features")
+        model = HierarchicalBayesianNetwork(
+            num_features=len(data.columns) - 1,
+            max_parents=3,
+            iterations=750,
+            categorical_columns=categorical_columns,
+            target_variable=target_variable,
+            prior_edges=prior_edges
+        )
+        logger.info(f"Fitting model with {len(data)} samples")
+        model.fit(data)
+        
+        logger.info("Model fitted successfully")
+        logger.info(f"Samples keys: {model.samples.keys()}")
+        
+        result = {
+            'samples': model.samples,
+            'edge_weights': model.edge_weights,
+            'data': model.data.to_dict(),
+            'categorical_columns': model.categorical_columns,
+            'target_variable': model.target_variable,
+            'prior_edges': model.prior_edges,
+            'num_features': model.num_features
+        }
+        
+        return convert_to_serializable(result)
+    except Exception as e:
+        logger.error(f"Error in fit_model: {str(e)}")
+        logger.exception("Exception details:")
+        raise
 
 @app.task
 def compute_edge_weights(model_data):
     model = reconstruct_model(model_data)
     result = model.compute_all_edge_probabilities()
-    print(f"Type of result: {type(result)}")  # Debug print
-    print(f"Contents of result: {result}")  # Debug print
     serializable_result = convert_to_serializable(result)
     return serializable_result
 
@@ -123,10 +148,17 @@ def compute_sensitivities(model_data, target_variable):
 
 @app.task
 def cross_validate(model_data, data_dict):
-    model = reconstruct_model(model_data)
-    data = pd.DataFrame(data_dict)
-    result = model.cross_validate_bayesian(data)
-    return convert_to_serializable(result)
+    try:
+        model = reconstruct_model(model_data)
+        data = pd.DataFrame(data_dict)
+        logger.info(f"Starting cross-validation with {len(data)} samples")
+        result = model.cross_validate_bayesian(data)
+        logger.info("Cross-validation completed successfully")
+        return convert_to_serializable(result)
+    except Exception as e:
+        logger.error(f"Error in cross_validate: {str(e)}")
+        logger.exception("Exception details:")
+        raise
 
 @app.task
 def get_clinical_implications(model_data):
@@ -174,10 +206,10 @@ def fit_nonlinear_model(model_data, data_dict, target_variable):
     })
 
 @app.task
-def bayesian_model_comparison(model_data, data_dict, models):
+def bayesian_model_comparison(model_data, data_dict, model_datas):
     model = reconstruct_model(model_data)
     data = pd.DataFrame(data_dict)
-    return convert_to_serializable(model.bayesian_model_comparison(data, models))
+    return convert_to_serializable(model.bayesian_model_comparison(data, model_datas))
 
 @app.task
 def analyze_age_related_changes(model_data, data_dict, age_column, cognitive_measures):
@@ -190,3 +222,19 @@ def compare_performance(model_data, data_dict, target_variable):
     model = reconstruct_model(model_data)
     data = pd.DataFrame(data_dict)
     return convert_to_serializable(model.compare_performance(model, data, target_variable))
+
+@app.task
+def fit_simple(model_data, data_dict, target_variable):
+    model = reconstruct_model(model_data)
+    data = pd.DataFrame(data_dict)
+    model.fit_simple(data, target_variable)
+    
+    return convert_to_serializable({
+        'samples': model.samples,
+        'data': model.data.to_dict(),
+        'categorical_columns': model.categorical_columns,
+        'target_variable': model.target_variable,
+        'prior_edges': model.prior_edges,
+        'num_features': model.num_features
+    })
+

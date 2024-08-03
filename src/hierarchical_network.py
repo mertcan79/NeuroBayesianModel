@@ -1,25 +1,29 @@
 import numpy as np
 import pandas as pd
 from scipy import stats
+from functools import lru_cache
 import jax.numpy as jnp
 import numpyro
 import numpyro.distributions as dist
 from numpyro.infer import MCMC, NUTS, Predictive
 from jax import random, vmap
 import jax.numpy as jnp
-from jax import Array
 import jax
-from functools import partial
+from jax import jit
 from sklearn.linear_model import LinearRegression
 from sklearn.metrics import mean_squared_error, r2_score
+from numpyro.diagnostics import split_gelman_rubin
 
+from celery.utils.log import get_task_logger
+
+logger = get_task_logger(__name__)
 
 class HierarchicalBayesianNetwork:
     def __init__(
         self,
         num_features,
         max_parents=2,
-        iterations=350,
+        iterations=50,
         categorical_columns=None,
         target_variable=None,
         prior_edges=None,
@@ -35,18 +39,13 @@ class HierarchicalBayesianNetwork:
         self.data = None
         self.edge_weights = None
 
-    def model(self, X, y=None):
+    def model(self, params, X, y=None):
         num_samples, num_features = X.shape
 
-        with numpyro.plate("features", num_features):
-            alpha = numpyro.sample("alpha", dist.Normal(0, 10))
-            beta = numpyro.sample("beta", dist.Normal(0, 10))
-
+        alpha = numpyro.sample("alpha", dist.Normal(0, 10).expand([num_features]))
+        beta = numpyro.sample("beta", dist.Normal(0, 10).expand([num_features]))
         sigma = numpyro.sample("sigma", dist.HalfNormal(1))
-
-        # Use continuous edge weights
-        with numpyro.plate("edges", len(self.prior_edges)):
-            edge_weights = numpyro.sample("edge_weights", dist.Beta(1, 1))
+        edge_weights = numpyro.sample("edge_weights", dist.Beta(1, 1).expand([len(self.prior_edges)]))
 
         with numpyro.plate("data", num_samples):
             y_hat = jnp.zeros(num_samples)
@@ -59,7 +58,7 @@ class HierarchicalBayesianNetwork:
                         + beta[child_idx] * X[:, child_idx]
                     )
 
-            numpyro.sample("y", dist.Normal(y_hat, sigma), obs=y)
+            return numpyro.sample("y", dist.Normal(y_hat, sigma), obs=y)
 
     def fit(self, data, prior_edges=None):
         if self.target_variable is None:
@@ -77,8 +76,19 @@ class HierarchicalBayesianNetwork:
         X = data.drop(columns=[self.target_variable]).values
         y = data[self.target_variable].values
 
-        kernel = NUTS(self.model)
-        mcmc = MCMC(kernel, num_warmup=500, num_samples=self.iterations)
+        # Initialize samples with dummy values
+        self.samples = {
+            'alpha': jnp.zeros(self.num_features),
+            'beta': jnp.zeros(self.num_features),
+            'sigma': jnp.array(1.0),
+            'edge_weights': jnp.zeros(len(self.prior_edges))
+        }
+
+        def model_wrapper(X, y):
+            return self.model(self.samples, X, y)
+        
+        kernel = NUTS(model_wrapper)
+        mcmc = MCMC(kernel, num_warmup=100, num_samples=self.iterations)
         rng_key = random.PRNGKey(0)
         mcmc.run(rng_key, X=X, y=y)
         self.samples = mcmc.get_samples()
@@ -92,21 +102,28 @@ class HierarchicalBayesianNetwork:
                 "Model has not been fitted yet. Call `fit` before `predict`."
             )
 
-        alpha_mean = self.samples["alpha"].mean(axis=0)
-        beta_mean = self.samples["beta"].mean(axis=0)
+        try:
+            alpha_mean = self.samples["alpha"].mean(axis=0)
+            beta_mean = self.samples["beta"].mean(axis=0)
 
-        X_tensor = X.drop(columns=[self.target_variable]).values
-        y_hat = np.zeros(X_tensor.shape[0])
+            if isinstance(X, pd.DataFrame):
+                X_tensor = X.drop(columns=[self.target_variable]).values
+            else:
+                X_tensor = X
 
-        for parent, child in self.prior_edges:
-            parent_idx = X.columns.get_loc(parent)
-            child_idx = X.columns.get_loc(child)
-            y_hat += (
-                alpha_mean[parent_idx] * X_tensor[:, parent_idx]
-                + beta_mean[child_idx] * X_tensor[:, child_idx]
-            )
+            params = {
+                'alpha': alpha_mean,
+                'beta': beta_mean,
+                'sigma': self.samples['sigma'].mean(),
+                'edge_weights': self.edge_weights
+            }
+            y_hat = self.model(params, X_tensor, None)
 
-        return y_hat
+            return y_hat
+        except Exception as e:
+            logger.error(f"Error in predict: {str(e)}")
+            logger.exception("Exception details:")
+            raise
 
     def compute_edge_probability(self, data):
         if self.samples is None:
@@ -132,9 +149,15 @@ class HierarchicalBayesianNetwork:
                 "Model has not been fitted yet. Call `fit` before computing log likelihood."
             )
 
-        y_hat = self.predict(data)
-        sigma = self.samples["sigma"].mean()
-        return dist.Normal(y_hat, sigma).log_prob(data[self.target_variable]).sum()
+        try:
+            y_hat = self.predict(data)
+            sigma = self.samples["sigma"].mean()
+            log_prob = dist.Normal(y_hat, sigma).log_prob(data[self.target_variable])
+            return jnp.sum(log_prob)
+        except Exception as e:
+            logger.error(f"Error in compute_log_likelihood: {str(e)}")
+            logger.exception("Exception details:")
+            raise
 
     def compute_model_evidence(self, data):
         if self.samples is None:
@@ -147,6 +170,7 @@ class HierarchicalBayesianNetwork:
         log_likelihoods = dist.Normal(y_hat, sigma).log_prob(data[self.target_variable])
         return -2 * (np.mean(log_likelihoods) - np.var(log_likelihoods))
 
+    @lru_cache(maxsize=None)
     def get_parameter_estimates(self):
         if self.samples is None:
             raise ValueError(
@@ -158,7 +182,8 @@ class HierarchicalBayesianNetwork:
             "beta": self.samples["beta"].mean(axis=0),
             "sigma": self.samples["sigma"].mean(),
         }
-
+    
+    
     def compute_all_edge_probabilities(self):
         if self.edge_weights is None:
             raise ValueError(
@@ -188,7 +213,7 @@ class HierarchicalBayesianNetwork:
                     "P(important)": important_prob,
                 }
 
-        return results 
+        return results
 
     def explain_structure_extended(self):
         if self.samples is None:
@@ -240,6 +265,7 @@ class HierarchicalBayesianNetwork:
                 )
         return sensitivities
 
+    @lru_cache(maxsize=128)
     def compute_mutual_information_bayesian(
         self, node1, node2, num_bins=10, categorical_columns=[]
     ):
@@ -295,16 +321,26 @@ class HierarchicalBayesianNetwork:
                 yield data.iloc[train_indices], data.iloc[test_indices]
 
         log_likelihoods = []
-        for train_data, test_data in split_data(data, k):
-            self.fit(train_data, prior_edges=self.prior_edges)  # Pass prior_edges here
-            log_likelihood = self.compute_log_likelihood(test_data)
-            log_likelihoods.append(log_likelihood)
+        for i, (train_data, test_data) in enumerate(split_data(data, k)):
+            logger.info(f"Starting fold {i+1}/{k}")
+            try:
+                self.fit(train_data, prior_edges=self.prior_edges)
+                log_likelihood = self.compute_log_likelihood(test_data)
+                log_likelihoods.append(log_likelihood)
+                logger.info(f"Fold {i+1} completed. Log-likelihood: {log_likelihood}")
+            except Exception as e:
+                logger.error(f"Error in fold {i+1}: {str(e)}")
+                logger.exception("Exception details:")
+
+        if not log_likelihoods:
+            raise ValueError("No successful folds in cross-validation")
 
         return float(np.mean(log_likelihoods)), float(np.std(log_likelihoods))
 
     def get_target_variable(self):
         return self.target_variable
 
+    @lru_cache(maxsize=None)
     def get_clinical_implications(self):
         if self.samples is None:
             raise ValueError(
@@ -341,16 +377,17 @@ class HierarchicalBayesianNetwork:
                 diff = old_corr[feature] - young_corr[feature]
                 age_differences[feature] = None if np.isnan(diff) else float(diff)
         return age_differences
-        def perform_interaction_effects_analysis(self, target):
-            interactions = {}
-            numeric_columns = self.data.select_dtypes(include=[np.number]).columns
-            for i in range(len(numeric_columns)):
-                for j in range(i + 1, len(numeric_columns)):
-                    col1, col2 = numeric_columns[i], numeric_columns[j]
-                    interaction_term = self.data[col1] * self.data[col2]
-                    correlation = np.corrcoef(interaction_term, self.data[target])[0, 1]
-                    interactions[f"{col1}_{col2}"] = correlation
-            return interactions
+    
+    def perform_interaction_effects_analysis(self, target):
+        interactions = {}
+        numeric_columns = self.data.select_dtypes(include=[np.number]).columns
+        for i in range(len(numeric_columns)):
+            for j in range(i + 1, len(numeric_columns)):
+                col1, col2 = numeric_columns[i], numeric_columns[j]
+                interaction_term = self.data[col1] * self.data[col2]
+                correlation = np.corrcoef(interaction_term, self.data[target])[0, 1]
+                interactions[f"{col1}_{col2}"] = correlation
+        return interactions
 
     def perform_counterfactual_analysis(self, interventions, target_variable):
         original_prediction = self.predict(self.data)
@@ -503,41 +540,58 @@ class HierarchicalBayesianNetwork:
 
     def nonlinear_cognitive_model(self, X, y=None):
         num_samples, num_features = X.shape
-
-        # Non-linear transformation of features
-        W1 = numpyro.sample("W1", dist.Normal(0, 1).expand([num_features, 10]))
-        b1 = numpyro.sample("b1", dist.Normal(0, 1).expand([10]))
-        W2 = numpyro.sample("W2", dist.Normal(0, 1).expand([10, 1]))
+        
+        # Reduce number of hidden units
+        W1 = numpyro.sample("W1", dist.Normal(0, 1).expand([num_features, 5]))  # Changed from 10 to 5
+        b1 = numpyro.sample("b1", dist.Normal(0, 1).expand([5]))
+        W2 = numpyro.sample("W2", dist.Normal(0, 1).expand([5, 1]))
         b2 = numpyro.sample("b2", dist.Normal(0, 1))
-
-        # Non-linear activation function (e.g., ReLU)
+        
         hidden = jnp.maximum(0, jnp.dot(X, W1) + b1)
         y_hat = jnp.dot(hidden, W2) + b2
-
+        
         sigma = numpyro.sample("sigma", dist.HalfNormal(1))
         numpyro.sample("y", dist.Normal(y_hat, sigma), obs=y)
 
     def fit_nonlinear(self, data, target_variable):
         X = data.drop(columns=[target_variable]).values
         y = data[target_variable].values
-
+        
         kernel = NUTS(self.nonlinear_cognitive_model)
-        mcmc = MCMC(kernel, num_warmup=500, num_samples=1000)
-        mcmc.run(random.PRNGKey(0), X, y)
+        mcmc = MCMC(kernel, num_warmup=50, num_samples=100)
+        
+        for i in range(10):  # Check convergence every 50 samples
+            mcmc.run(random.PRNGKey(i), X, y, num_samples=50)
+            samples = mcmc.get_samples()
+            r_hat = split_gelman_rubin(samples)
+            if all(r < 1.1 for r in r_hat.values()):
+                break
+        
         self.samples = mcmc.get_samples()
 
-    def bayesian_model_comparison(self, data, models):
-        def compute_waic(model, data):
-            kernel = NUTS(model)
-            mcmc = MCMC(kernel, num_warmup=500, num_samples=1000)
-            mcmc.run(random.PRNGKey(0), data)
-            samples = mcmc.get_samples()
-            log_likelihood = vmap(lambda params: model(params, data))(samples)
-            return -2 * (log_likelihood.mean() - log_likelihood.var())
+    def bayesian_model_comparison(self, data, model_datas):
+        def compute_waic(model_data, data):
+            model = self.__class__(
+                num_features=model_data['num_features'],
+                max_parents=2,
+                iterations=100,
+                categorical_columns=model_data['categorical_columns'],
+                target_variable=model_data['target_variable'],
+                prior_edges=model_data['prior_edges']
+            )
+            model.samples = {k: jax.numpy.array(v) for k, v in model_data['samples'].items()}
+            model.edge_weights = jax.numpy.array(model_data['edge_weights'])
+            model.data = pd.DataFrame(model_data['data'])
+
+            X = data.drop(columns=[model.target_variable]).values
+            y = data[model.target_variable].values
+
+            log_likelihood = vmap(lambda params: model.model(params, X, y))(model.samples)
+            return -2 * (jnp.mean(log_likelihood) - jnp.var(log_likelihood))
 
         return {
-            model_name: compute_waic(model, data)
-            for model_name, model in models.items()
+            model_name: compute_waic(model_data, data)
+            for model_name, model_data in model_datas.items()
         }
 
     def compare_performance(model, data, target_variable):
@@ -641,3 +695,18 @@ class HierarchicalBayesianNetwork:
                         )
 
         return insights
+
+    def simple_linear_model(self, X, y=None):
+        beta = numpyro.sample("beta", dist.Normal(0, 1).expand([X.shape[1]]))
+        sigma = numpyro.sample("sigma", dist.HalfNormal(1))
+        mean = jnp.dot(X, beta)
+        numpyro.sample("y", dist.Normal(mean, sigma), obs=y)
+
+    def fit_simple(self, data, target_variable):
+        X = data.drop(columns=[target_variable]).values
+        y = data[target_variable].values
+        
+        kernel = NUTS(self.simple_linear_model)
+        mcmc = MCMC(kernel, num_warmup=100, num_samples=200)
+        mcmc.run(random.PRNGKey(0), X, y)
+        self.samples = mcmc.get_samples()

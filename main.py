@@ -5,11 +5,10 @@ import pandas as pd
 import numpy as np
 from src.data_processing import prepare_data
 import warnings
-import jax
 from src.tasks import (fit_model, compute_edge_weights, explain_structure, get_key_relationships, compute_sensitivities, 
                        bayesian_model_comparison, cross_validate, get_clinical_implications, analyze_age_dependent_relationships, 
                        perform_interaction_effects_analysis, perform_counterfactual_analysis, analyze_age_related_changes, 
-                       perform_sensitivity_analysis, fit_nonlinear_model, compare_performance
+                       perform_sensitivity_analysis, fit_nonlinear_model, compare_performance, fit_simple
                        )
                         
 warnings.filterwarnings("ignore", category=UserWarning)
@@ -58,6 +57,34 @@ def preprocess_hcp():
     behavioral_data.to_csv(behavioral_path_processed, index=False)
     hcp_data.to_csv(hcp_path_processed, index=False)
 
+def test_tasks(model_data, data_dict, target_variable, params):
+    """Test all tasks to ensure they run without errors."""
+    tasks_to_test = [
+        (compute_edge_weights, (model_data,)),
+        (explain_structure, (model_data,)),
+        (get_key_relationships, (model_data,)),
+        (compute_sensitivities, (model_data, target_variable)),
+        (cross_validate, (model_data, data_dict)),
+        (get_clinical_implications, (model_data,)),
+        (analyze_age_dependent_relationships, (model_data, data_dict, params["age_column"], target_variable)),
+        (perform_interaction_effects_analysis, (model_data, target_variable)),
+        (perform_counterfactual_analysis, (model_data, data_dict, {params["age_column"]: 30}, target_variable)),
+        (perform_sensitivity_analysis, (model_data, target_variable)),
+        #(fit_nonlinear_model, (model_data, data_dict, target_variable)),
+        (fit_simple, (model_data, data_dict, target_variable)),
+        (bayesian_model_comparison, (model_data, data_dict, {'linear': model_data})),
+        (analyze_age_related_changes, (model_data, data_dict, params["age_column"], params["cognitive_measures"])),
+        (compare_performance, (model_data, data_dict, target_variable))
+    ]
+
+    for task, args in tasks_to_test:
+        try:
+            result = task.apply(args).get()
+            logger.info(f"Task {task.__name__} completed successfully, result: {result}")
+        except Exception as e:
+            logger.error(f"Task {task.__name__} failed: {str(e)}")
+            return False
+    return True
 
 def main():
     try:
@@ -177,7 +204,9 @@ def main():
         filtered_prior_edges = [(parent, child) for parent, child in prior_edges 
                                 if parent != target_variable and child != target_variable]
 
-        data_dict = data.to_dict()
+        #data_dict = data.to_dict()
+        data_subset = data.sample(n=min(300, len(data)))  # Use at most 1000 samples
+        data_dict = data_subset.to_dict()
 
         logger.info("Fitting Bayesian Network")
         
@@ -185,6 +214,14 @@ def main():
         model_data = model_data_future.get()
 
         logger.success("Bayesian Network fitting completed successfully")
+
+        # Test all tasks before proceeding with the full analysis
+        logger.info("Testing all tasks")
+        if test_tasks(model_data, data_dict, target_variable, params):
+            logger.success("All tasks passed the test")
+        else:
+            logger.error("Some tasks failed the test. Please check the logs and fix the issues before proceeding.")
+            return
 
         logger.info("Computing edge weights")
         edge_weights_future = compute_edge_weights.delay(model_data)
