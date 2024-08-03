@@ -8,7 +8,7 @@ import warnings
 from src.tasks import (fit_model, compute_edge_weights, explain_structure, get_key_relationships, compute_sensitivities,
                        bayesian_model_comparison, cross_validate,
                        perform_interaction_effects_analysis, perform_counterfactual_analysis, analyze_age_related_changes,
-                       perform_sensitivity_analysis, fit_nonlinear_model, compare_performance, fit_simple
+                       perform_sensitivity_analysis, compare_performance, fit_simple
                        )
 
 warnings.filterwarnings("ignore", category=UserWarning)
@@ -207,17 +207,6 @@ def main():
         model_data_future = fit_model.delay(data_dict, categorical_columns, target_variable, filtered_prior_edges)
         model_data = model_data_future.get()
 
-        logger.info("Fitting non-linear model")
-        nonlinear_model_data_future = fit_nonlinear_model.delay(model_data, data_dict, target_variable)
-
-        nonlinear_model_data = nonlinear_model_data_future.get()
-        logger.info("Non-linear model fitted")
-
-        models = {
-            'linear': model_data,
-            'nonlinear': nonlinear_model_data
-        }
-
         logger.success("Bayesian Network fitting completed successfully")
 
         logger.info("Testing all tasks")
@@ -251,8 +240,6 @@ def main():
         logger.info("Performing sensitivity analysis")
         sensitivity_analysis_future = perform_sensitivity_analysis.delay(model_data, target_variable)
 
-        logger.info("Performing Bayesian model comparison")
-        comparison_results_future = bayesian_model_comparison.delay(model_data, data_dict, models)
 
         logger.info("Analyzing age-related changes")
         age_related_changes_future = analyze_age_related_changes.delay(model_data, data_dict, params["age_column"], params["cognitive_measures"])
@@ -287,9 +274,6 @@ def main():
 
         sensitivity_analysis = sensitivity_analysis_future.get()
         logger.info(f"Sensitivity analysis: {sensitivity_analysis}")
-
-        comparison_results = comparison_results_future.get()
-        logger.info(f"Model Comparison Results: {comparison_results}")
 
         age_related_changes = age_related_changes_future.get()
         logger.info(f"Age-related changes: {age_related_changes}")

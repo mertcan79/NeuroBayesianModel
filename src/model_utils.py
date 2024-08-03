@@ -5,7 +5,6 @@ import numpyro
 import numpyro.distributions as dist
 from scipy import stats
 
-
 def simple_linear_model(X, target_variable=None):
     beta = numpyro.sample("beta", dist.Normal(0, 1).expand([X.shape[1]]))
     sigma = numpyro.sample("sigma", dist.HalfNormal(1))

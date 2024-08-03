@@ -192,27 +192,6 @@ def perform_sensitivity_analysis(self, model_data, target_variable):
         raise self.retry(exc=e)
 
 @app.task(bind=True, max_retries=3, default_retry_delay=300)
-def fit_nonlinear_model(self, model_data, data_dict, target_variable):
-    try:
-        model = reconstruct_model(model_data)
-        data = pd.DataFrame(data_dict)
-        model.fit_nonlinear(data, target_variable)
-
-        return convert_to_serializable({
-            'samples': model.samples,
-            'edge_weights': model.edge_weights,
-            'data': model.data.to_dict(),
-            'categorical_columns': model.categorical_columns,
-            'target_variable': model.target_variable,
-            'prior_edges': model.prior_edges,
-            'num_features': model.num_features
-        })
-    except Exception as e:
-        logger.error(f"Error in fit_nonlinear_model: {str(e)}")
-        logger.exception("Exception details:")
-        raise self.retry(exc=e)
-
-@app.task(bind=True, max_retries=3, default_retry_delay=300)
 def bayesian_model_comparison(self, model_data, data_dict, model_datas):
     try:
         model = reconstruct_model(model_data)
@@ -262,5 +241,24 @@ def fit_simple(self, model_data, data_dict, target_variable):
         })
     except Exception as e:
         logger.error(f"Error in fit_simple: {str(e)}")
+        logger.exception("Exception details:")
+        raise self.retry(exc=e)
+
+@app.task(bind=True, max_retries=3, default_retry_delay=300)
+def evaluate_cpd(self, model_data, node, parents, parent_values, num_samples=1000):
+    try:
+        model = reconstruct_model(model_data)
+        cpd_function = model.evaluate_cpds(node, parents, num_samples)
+        x, samples = cpd_function(*parent_values)
+        result = {
+            'x': x.tolist(),
+            'samples': samples.tolist(),
+            'mean': samples.mean(axis=0).tolist(),
+            'ci_lower': np.percentile(samples, 2.5, axis=0).tolist(),
+            'ci_upper': np.percentile(samples, 97.5, axis=0).tolist()
+        }
+        return convert_to_serializable(result)
+    except Exception as e:
+        logger.error(f"Error in evaluate_cpd: {str(e)}")
         logger.exception("Exception details:")
         raise self.retry(exc=e)

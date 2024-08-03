@@ -7,6 +7,8 @@ from numpyro.infer import MCMC, NUTS
 from jax import random
 import logging
 from numpyro.diagnostics import split_gelman_rubin
+from scipy import stats
+import matplotlib.pyplot as plt
 
 from insights import (
     perform_age_stratified_analysis,
@@ -93,13 +95,13 @@ class HierarchicalBayesianNetwork:
 
             return numpyro.sample("y", dist.Normal(y_hat, sigma), obs=y, rng_key=rng_key)
 
-
-    def fit(self, data: pd.DataFrame, prior_edges: list = None):
+    def fit(self, data: pd.DataFrame, model_type: str = 'linear', prior_edges: list = None):
         """
         Fit the model to the data.
 
         Args:
             data (pd.DataFrame): Input data.
+            model_type (str): Type of model to fit ('linear' or 'nonlinear'). Defaults to 'linear'.
             prior_edges (list, optional): List of prior edges in the network. Defaults to None.
         """
         if self.target_variable is None:
@@ -117,23 +119,64 @@ class HierarchicalBayesianNetwork:
         X = data.drop(columns=[self.target_variable]).values
         y = data[self.target_variable].values
 
-        # Initialize samples with dummy values
-        self.samples = {
-            'alpha': jnp.zeros(self.num_features),
-            'beta': jnp.zeros(self.num_features),
-            'sigma': jnp.array(1.0),
-            'edge_weights': jnp.zeros(len(self.prior_edges))
-        }
-
         def model_wrapper(X, y):
-            return self.model(self.samples, X, y)
+            if model_type == 'linear':
+                return simple_linear_model(X, target_variable=self.target_variable)
+            elif model_type == 'nonlinear':
+                return nonlinear_cognitive_model(X, target_variable=self.target_variable)
+            else:
+                raise ValueError(f"Unknown model type: {model_type}")
 
         kernel = NUTS(model_wrapper)
-        mcmc = MCMC(kernel, num_warmup=100, num_samples=self.iterations)
+        mcmc = MCMC(kernel, num_warmup=100, num_samples=self.iterations, num_chains=4)  # Ensure at least 4 chains
         rng_key = random.PRNGKey(0)
         mcmc.run(rng_key, X=X, y=y)
         self.samples = mcmc.get_samples()
-        self.edge_weights = self.samples["edge_weights"].mean(axis=0)
+
+        # Check convergence for each parameter
+        r_hat = {}
+        for param, samples in self.samples.items():
+            if samples.ndim < 2:
+                samples = samples.reshape(-1, 1)  # Reshape to 2D if necessary
+            if samples.shape[1] < 4:
+                print(f"Warning: Insufficient chains for parameter '{param}'. Skipping Gelman-Rubin diagnostic.")
+                continue
+            r_hat[param] = split_gelman_rubin(samples)
+
+        # Check if 'edge_weights' is present in the samples
+        if 'edge_weights' in self.samples:
+            self.edge_weights = self.samples["edge_weights"].mean(axis=0)
+        else:
+            print("Warning: 'edge_weights' not found in samples. Skipping edge weights calculation.")
+            self.edge_weights = None
+
+        # Check if 'alpha' is present in the samples
+        if 'alpha' in self.samples:
+            self.alpha = self.samples["alpha"].mean(axis=0)
+        else:
+            print("Warning: 'alpha' not found in samples. Skipping alpha calculation.")
+            self.alpha = None
+
+        # Check if 'beta' is present in the samples
+        if 'beta' in self.samples:
+            self.beta = self.samples["beta"].mean(axis=0)
+        else:
+            print("Warning: 'beta' not found in samples. Skipping beta calculation.")
+            self.beta = None
+
+        # Check if 'sigma' is present in the samples
+        if 'sigma' in self.samples:
+            self.sigma = self.samples["sigma"].mean(axis=0)
+        else:
+            print("Warning: 'sigma' not found in samples. Skipping sigma calculation.")
+            self.sigma = None
+
+        # Check overall convergence
+        if not all(r < 1.1 for r in r_hat.values()):
+            print("Warning: Model may not have converged.")
+
+        return self.samples
+
 
     def predict(self, X):
         """
@@ -529,25 +572,64 @@ class HierarchicalBayesianNetwork:
         all_models = {'HierarchicalBayesianNetwork': self, **other_models}
         return bayesian_model_comparison(all_models, self.data, self.target_variable)
 
-    def fit_nonlinear(self, data, target_variable):
+    def evaluate_cpds(self, node, parents, num_samples=1000):
         """
-        Fit a nonlinear cognitive model to the data.
+        Evaluate the Conditional Probability Distribution for a node given its parents,
+        considering the full posterior distributions of parameters.
 
         Args:
-            data (pd.DataFrame): Input data.
-            target_variable (str): The target variable to predict.
+            node (str): The target node.
+            parents (list): List of parent nodes.
+            num_samples (int): Number of samples to draw from the posterior distributions.
+
+        Returns:
+            function: A function that takes parent values and returns a sampled distribution of probabilities for the node.
         """
-        X = data.drop(columns=[target_variable]).values
-        y = data[target_variable].values
+        if self.samples is None:
+            raise ValueError("Model has not been fitted yet. Call `fit` before evaluating CPDs.")
 
-        kernel = NUTS(nonlinear_cognitive_model)
-        mcmc = MCMC(kernel, num_warmup=50, num_samples=50)
+        node_idx = self.data.columns.get_loc(node)
+        parent_indices = [self.data.columns.get_loc(parent) for parent in parents]
 
-        for i in range(10):  # Check convergence every 50 samples
-            mcmc.run(random.PRNGKey(i), X, y)
-            samples = mcmc.get_samples()
-            r_hat = split_gelman_rubin(samples)
-            if all(r < 1.1 for r in r_hat.values()):
-                break
+        def cpd_function(*parent_values):
+            # Sample from the posterior distributions of parameters
+            alpha_samples = self.samples['alpha'][:, node_idx]
+            beta_samples = self.samples['beta'][:, node_idx]
+            sigma_samples = self.samples['sigma']
 
-        self.samples = mcmc.get_samples()
+            # Calculate the means of the normal distributions
+            means = (alpha_samples * sum(self.samples['alpha'][:, i] * v for i, v in zip(parent_indices, parent_values)) +
+                     beta_samples * sum(self.samples['beta'][:, i] * v for i, v in zip(parent_indices, parent_values)))
+
+            # Generate samples from the resulting distributions
+            x = np.linspace(means.min() - 3*sigma_samples.max(), means.max() + 3*sigma_samples.max(), num_samples)
+            samples = np.random.normal(loc=means[:, np.newaxis], scale=sigma_samples[:, np.newaxis], size=(len(means), num_samples))
+
+            # Return the samples and the x values
+            return x, samples
+
+        return cpd_function
+    
+    def plot_cpd(self, node, parents, parent_values, num_samples=1000):
+        """
+        Plot the distribution of Conditional Probability Distributions for a node given its parents.
+
+        Args:
+            node (str): The target node.
+            parents (list): List of parent nodes.
+            parent_values (list): List of values for the parent nodes.
+            num_samples (int): Number of samples to draw from the posterior distributions.
+        """
+        cpd_function = self.evaluate_cpds(node, parents, num_samples)
+        x, samples = cpd_function(*parent_values)
+
+        plt.figure(figsize=(10, 6))
+        plt.plot(x, samples.T, color='blue', alpha=0.1)
+        plt.plot(x, samples.mean(axis=0), color='red', label='Mean CPD')
+        plt.fill_between(x, np.percentile(samples, 2.5, axis=0), np.percentile(samples, 97.5, axis=0), 
+                         color='blue', alpha=0.2, label='95% CI')
+        plt.title(f'CPD for {node} given {", ".join(parents)}')
+        plt.xlabel(node)
+        plt.ylabel('Probability Density')
+        plt.legend()
+        plt.show()
