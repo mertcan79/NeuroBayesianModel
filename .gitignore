@@ -45,6 +45,9 @@ creds/
 notebooks/
 logs/
 tests/
+data/
+notebooks/
+
 
 /src/main.ipynb
 

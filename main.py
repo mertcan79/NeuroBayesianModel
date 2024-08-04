@@ -3,7 +3,7 @@ from loguru import logger
 from dotenv import load_dotenv
 import pandas as pd
 import numpy as np
-from src.data_processing import prepare_data
+from data.data_processing import prepare_data
 import warnings
 from src.tasks import (fit_model, compute_edge_weights, explain_structure, get_key_relationships, compute_sensitivities,
                        bayesian_model_comparison, cross_validate,
