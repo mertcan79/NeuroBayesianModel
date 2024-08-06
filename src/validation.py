@@ -160,7 +160,7 @@ def bayesian_model_comparison(models, data, target_variable):
         log_likelihood = model.compute_log_likelihood(data)
         num_params = len(model.get_parameter_estimates())
         bic = -2 * log_likelihood + num_params * np.log(len(data))
-        
+
         results[name] = {
             'Log Likelihood': log_likelihood,
             'Num Parameters': num_params,
@@ -168,7 +168,7 @@ def bayesian_model_comparison(models, data, target_variable):
         }
 
     df_results = pd.DataFrame(results).T
-    
+
     # Calculate model probabilities
     bic_values = df_results['BIC'].values
     model_probs = np.exp(-0.5 * (bic_values - np.min(bic_values)))

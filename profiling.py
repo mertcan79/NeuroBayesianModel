@@ -2,7 +2,7 @@ import cProfile
 import pstats
 import io
 import json
-from main import main
+from hcp import main
 
 
 def profile_main():

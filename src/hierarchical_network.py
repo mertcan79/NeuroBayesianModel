@@ -7,7 +7,6 @@ from numpyro.infer import MCMC, NUTS
 from jax import random
 import logging
 from numpyro.diagnostics import split_gelman_rubin
-from scipy import stats
 import matplotlib.pyplot as plt
 
 from insights import (
