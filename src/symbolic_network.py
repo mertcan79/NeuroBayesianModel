@@ -1,13 +1,12 @@
+from hierarchical_network import HierarchicalBayesianNetwork
 import numpy as np
 import jax.numpy as jnp
 import numpyro
 import networkx as nx
-from hierarchical_network import HierarchicalBayesianNetwork
-from numpyro import distributions as dist
 
 class SymbolicBayesianNetwork(HierarchicalBayesianNetwork):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+    def __init__(self, num_features, max_parents=2, iterations=50, *args, **kwargs):
+        super().__init__(num_features, max_parents, iterations, *args, **kwargs)
         self.symbolic_rules = []
         self.causal_graph = nx.DiGraph()
 
@@ -25,11 +24,12 @@ class SymbolicBayesianNetwork(HierarchicalBayesianNetwork):
         elif rule['type'] == 'custom':
             return rule['function'](data, params)
 
-    def model(self, X, y=None):
-        params = super().model(X, y)
+    def fit(self, data):
+        super().fit(data)
         for rule in self.symbolic_rules:
-            numpyro.factor("rule_constraint", self.evaluate_symbolic_rule(rule, X, params))
-        return params
+            numpyro.factor("rule_constraint", self.evaluate_symbolic_rule(rule, data, self.samples))
+        self.learn_causal_structure()
+        return self.samples
 
     def learn_causal_structure(self):
         self.causal_graph = nx.DiGraph()
@@ -41,7 +41,6 @@ class SymbolicBayesianNetwork(HierarchicalBayesianNetwork):
     def perform_causal_inference(self, intervention, target):
         if not nx.has_path(self.causal_graph, intervention[0], target):
             return "No causal path found"
-
         intervention_effect = self.predict({intervention[0]: intervention[1]})
         baseline = self.predict({})
         return intervention_effect[target] - baseline[target]

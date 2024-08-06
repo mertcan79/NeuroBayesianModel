@@ -29,3 +29,16 @@ dev = ["pytest"]
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.poetry]
+name = "your-project-name"
+version = "0.1.0"
+description = "Your project description"
+authors = ["Your Name <you@example.com>"]
+
+[tool.poetry.dependencies]
+python = "3.12.1"
+moabb = "1.1.0" 
+pandas = "1.5.3"
+
+[tool.poetry.dev-dependencies]

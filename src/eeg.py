@@ -5,6 +5,9 @@ from scipy.signal import welch
 import mne
 from scipy import signal
 from scipy import stats
+from sklearn.mixture import BayesianGaussianMixture
+import matplotlib.pyplot as plt
+import ruptures as rpt
 
 class SymbolicEEG(SymbolicBayesianNetwork):
     def __init__(self, num_channels, num_bands=5, time_window=1, *args, **kwargs):
@@ -13,6 +16,15 @@ class SymbolicEEG(SymbolicBayesianNetwork):
         self.num_bands = num_bands
         self.time_window = time_window
         self.feature_names = self._generate_feature_names()
+
+    def fit(self, eeg_data, sfreq, behavioral_data=None):
+        preprocessed_eeg = self.preprocess_eeg(eeg_data, sfreq)
+        eeg_features = self.extract_features(preprocessed_eeg, sfreq)
+        if behavioral_data is not None:
+            combined_data = pd.concat([pd.DataFrame(eeg_features), behavioral_data], axis=1)
+        else:
+            combined_data = pd.DataFrame(eeg_features)
+        super().fit(combined_data)
 
     def _generate_feature_names(self):
         bands = ['delta', 'theta', 'alpha', 'beta', 'gamma']
@@ -110,7 +122,7 @@ class SymbolicEEG(SymbolicBayesianNetwork):
         self.add_symbolic_rule({
             'type': 'custom',
             'function': rule_function
-        })
+        })  
 
     def analyze_frequency_dynamics(self, eeg_data, sfreq):
         f, t, Sxx = signal.spectrogram(eeg_data, fs=sfreq, nperseg=sfreq)
@@ -235,3 +247,36 @@ class SymbolicEEG(SymbolicBayesianNetwork):
                     conn[j, i] = conn[i, j]
         
         return conn, f
+
+    def extract_motor_imagery_features(self, eeg_data, sfreq):
+        features = []
+        for ch in range(eeg_data.shape[0]):
+            f, psd = welch(eeg_data[ch], fs=sfreq, nperseg=sfreq)
+            mu_power = np.mean(psd[(f >= 8) & (f <= 12)])
+            beta_power = np.mean(psd[(f >= 13) & (f <= 30)])
+            features.extend([mu_power, beta_power])
+        return np.array(features)
+
+    def predict_motor_imagery(self, eeg_data, sfreq):
+        motor_features = self.extract_motor_imagery_features(eeg_data, sfreq)
+        return self.predict(motor_features)
+
+    def detect_change_points(self, eeg_data, sfreq):
+        features = self.extract_motor_imagery_features(eeg_data, sfreq)
+        algo = rpt.Pelt(model="rbf").fit(features)
+        change_points = algo.predict(pen=10)
+        return change_points
+    
+    def nonparametric_clustering(self, features, n_components=10):
+        dpgmm = BayesianGaussianMixture(n_components=n_components, weight_concentration_prior_type='dirichlet_process')
+        dpgmm.fit(features)
+        return dpgmm
+    
+    def model_criticism(self, X, y):
+        y_pred = self.predict(X)
+        residuals = y - y_pred.mean(axis=0)
+        plt.scatter(y_pred.mean(axis=0), residuals)
+        plt.xlabel('Predicted')
+        plt.ylabel('Residuals')
+        plt.title('Residual Plot')
+        plt.show()
